@@ -164,7 +164,8 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       `${escapeHtml(formatTime(c.time, t.timeFmt))}</span>`;
 
     // 이름 + 제목 텍스트 묶음을 하나의 inline <a>로 감싼다(<br>로 줄바꿈 — 블록 자식 없음).
-    const nameHtml = `<b style="font-size:${SZ.name}px;color:${m.fg}">${escapeHtml(m.name)}</b>`;
+    // 이름은 nowrap — 좁은 칸에서도 "여우연"이 글자별로 세로로 쪼개지지 않게(알약처럼 네이버 보존).
+    const nameHtml = `<b style="font-size:${SZ.name}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
     const titleHtml = c.title
       ? `<br><span style="font-size:${SZ.title}px;color:${m.fg}">${escapeHtml(c.title)}</span>`
       : '';
@@ -176,20 +177,19 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg};word-break:keep-all">${textInner}</a>`
       : textInner;
 
+    // 시간 알약(+썸네일)은 윗줄 오른쪽에 따로 둔다 → 이름/제목이 칸 전체 폭을 쓴다
+    // (좁은 7열 격자에서 이름이 알약과 폭을 나눠 쓰다 글자별로 깨지는 걸 막음).
+    const ts = SZ.thumb;
+    const topRight =
+      `<div style="text-align:right;line-height:1">${pill}` +
+      (img ? `<br><img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;object-fit:cover;${radius ? 'border-radius:9px;' : ''}display:inline-block;margin-top:6px">` : '') +
+      `</div>`;
     let body;
     if (narrow) {
       body = `<div style="text-align:${align}">${linkedText}</div>` +
              `<div style="margin-top:7px;text-align:${align}">${pill}</div>`;
     } else {
-      const ts = SZ.thumb;
-      const right = img
-        ? `${pill}<br><img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;object-fit:cover;${radius ? 'border-radius:9px;' : ''}display:inline-block;margin-top:6px">`
-        : pill;
-      body =
-        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
-        `<td style="padding:0;text-align:${align};vertical-align:top;word-break:keep-all">${linkedText}</td>` +
-        `<td style="padding:0 0 0 6px;text-align:right;vertical-align:top;width:${img ? ts : 1}${img ? 'px' : '%'}">${right}</td>` +
-        `</tr></table>`;
+      body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${linkedText}</div>`;
     }
 
     const style =
