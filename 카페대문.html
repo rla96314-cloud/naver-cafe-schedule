@@ -173,7 +173,7 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1,
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:0,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -264,10 +264,13 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
       body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${linkedText}</div>`;
     }
 
+    // 카드 높이 고정(>0)이면 모든 카드가 같은 높이 → 균일 격자. 넘치는 내용은 잘림(overflow:hidden).
+    const ch = Math.max(0, +t.cardHeight || 0);
     const style =
       `background:${cardBg};` +
       (radius ? `border-radius:${radius}px;` : '') +
       `padding:10px 12px;${shadow}box-sizing:border-box;word-break:keep-all;` +
+      (ch ? `height:${ch}px;overflow:hidden;` : '') +
       (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 
     return `<div class="schd-card" style="${style}">${body}</div>`;
@@ -510,7 +513,7 @@ function defaultState() {
     sheetId: 'https://docs.google.com/spreadsheets/d/' + DEFAULT_SHEET_ID + '/edit',
     sheetTabs: DEFAULT_SHEET_TABS.map(t => ({ ...t })),
     theme: {
-      header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, bg: '흰색',
+      header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, cardHeight: 0, bg: '흰색',
       linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽',
       wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
     },
@@ -791,6 +794,7 @@ function designPanel() {
     ['서브 배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 배지 없음', oninput: e => { S.theme.subtitle = e.target.value; refreshPreview(); } })],
     ['글자 크기', seg(S.theme.fontSize, ['작게', '보통', '크게'].map(v => ({ v, label: v })), v => set('fontSize', v))],
     ['글자 배율', fontScaleSlider()],
+    ['카드 높이', cardHeightSlider()],
     ['배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => set('bg', v))],
     ['링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '밑줄로 표시' }, { v: false, label: '없음' }], v => set('linkUnderline', v))],
     ['겹칠 때', seg(S.theme.collision, [{ v: '좌우', label: '좌·우' }, { v: '위아래', label: '위·아래' }], v => set('collision', v))],
@@ -821,6 +825,19 @@ function fontScaleSlider() {
   });
   const reset = el('button', { style: btn + ';padding:5px 9px;font-size:11px', title: '100%로', onclick: () => { S.theme.fontScale = 1; render(); } }, '↺');
   return el('div', { style: 'display:flex;align-items:center;gap:10px;flex:1' }, [range, pct, reset]);
+}
+
+/* 카드 높이 슬라이더 — 0(맨 왼쪽)=자동(내용만큼), 그 외=고정 px(모든 카드 같은 높이, 넘치면 잘림). */
+function cardHeightSlider() {
+  const cur = +S.theme.cardHeight || 0;
+  const lbl = el('span', { style: 'font-size:12px;font-weight:700;color:var(--accent);width:52px;text-align:right' }, cur ? cur + 'px' : '자동');
+  const range = el('input', {
+    type: 'range', min: '0', max: '160', step: '4', value: String(cur),
+    style: 'flex:1;accent-color:var(--accent);cursor:pointer',
+    oninput: e => { const v = +e.target.value; S.theme.cardHeight = v; lbl.textContent = v ? v + 'px' : '자동'; refreshPreview(); },
+  });
+  const reset = el('button', { style: btn + ';padding:5px 9px;font-size:11px', title: '자동으로', onclick: () => { S.theme.cardHeight = 0; render(); } }, '↺');
+  return el('div', { style: 'display:flex;align-items:center;gap:10px;flex:1' }, [range, lbl, reset]);
 }
 
 /* ── 미리보기(우측) ── */

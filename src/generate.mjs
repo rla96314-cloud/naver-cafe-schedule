@@ -101,7 +101,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1,
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:0,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -192,10 +192,13 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${linkedText}</div>`;
     }
 
+    // 카드 높이 고정(>0)이면 모든 카드가 같은 높이 → 균일 격자. 넘치는 내용은 잘림(overflow:hidden).
+    const ch = Math.max(0, +t.cardHeight || 0);
     const style =
       `background:${cardBg};` +
       (radius ? `border-radius:${radius}px;` : '') +
       `padding:10px 12px;${shadow}box-sizing:border-box;word-break:keep-all;` +
+      (ch ? `height:${ch}px;overflow:hidden;` : '') +
       (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 
     return `<div class="schd-card" style="${style}">${body}</div>`;
