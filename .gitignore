@@ -6,3 +6,4 @@ generated-*.png
 _*.mjs
 _*.html
 out.html
+.DS_Store
