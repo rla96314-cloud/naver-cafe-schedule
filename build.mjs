@@ -10,9 +10,10 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const stripExport = s => s.replace(/^export\s+/gm, '');
-const gen = stripExport(readFileSync('src/generate.mjs', 'utf8'));
-const csv = stripExport(readFileSync('src/csv.mjs', 'utf8'));
-const ui  = readFileSync('src/ui.js', 'utf8');
+const gen   = stripExport(readFileSync('src/generate.mjs', 'utf8'));
+const csv   = stripExport(readFileSync('src/csv.mjs', 'utf8'));
+const sheet = stripExport(readFileSync('src/sheet.js', 'utf8'));
+const ui    = readFileSync('src/ui.js', 'utf8');
 const membersCSV  = readFileSync('data/members.csv', 'utf8');
 const scheduleCSV = readFileSync('data/schedule.csv', 'utf8');
 
@@ -42,6 +43,8 @@ const html = `<!DOCTYPE html>
 ${csv}
 /* ───── src/generate.mjs (인라인, 코어와 동일) ───── */
 ${gen}
+/* ───── src/sheet.js (인라인, 구글시트 연동) ───── */
+${sheet}
 /* ───── 기본 데이터 (data/*.csv에서 빌드시 주입) ───── */
 const DEFAULT_MEMBERS_CSV = ${JSON.stringify(membersCSV)};
 const DEFAULT_SCHEDULE_CSV = ${JSON.stringify(scheduleCSV)};

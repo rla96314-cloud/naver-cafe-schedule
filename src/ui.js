@@ -31,9 +31,9 @@ function defaultState() {
   }));
   const weekStart = (rows.find(r => r.요일 === '월' && r.날짜) || {}).날짜 || '06.15';
   return {
-    members, schedule, weekStart,
+    members, schedule, weekStart, sheetRef: '',
     theme: {
-      header: '주간 스케줄표', subtitle: '', fontSize: '보통', bg: '흰색',
+      header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, bg: '흰색',
       linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽',
       wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
     },
@@ -51,7 +51,7 @@ function load() {
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      members: S.members, schedule: S.schedule, weekStart: S.weekStart, theme: S.theme,
+      members: S.members, schedule: S.schedule, weekStart: S.weekStart, theme: S.theme, sheetRef: S.sheetRef,
     }));
   } catch {}
 }
@@ -158,6 +158,18 @@ function schedulePanel() {
   const wrap = el('div', { style: 'flex:1;overflow-y:auto;padding:18px 22px' });
   wrap.append(panelHead('스케줄 · ' + S.weekStart + ' 주', '한 줄 = 방송 하나. 요일·시간·멤버·제목·링크를 바로 고치면 오른쪽 미리보기에 즉시 반영돼요.'));
 
+  // 구글시트 연동 — 그 주 탭의 URL(또는 gid)을 붙여넣고 불러오기(현재 편집을 덮어씀).
+  const sheetStatus = el('span', { id: 'sheet-status', style: 'font-size:11.5px;color:var(--sub)' }, '');
+  const sheetBtn = el('button', { style: btn, onclick: () => loadSheet(sheetBtn, sheetStatus) }, '↓ 시트에서 불러오기');
+  const sheetRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:10px 12px;background:#fff;border:1px solid var(--hair);border-radius:11px' }, [
+    el('span', { style: 'font-size:12.5px;font-weight:700;flex-shrink:0' }, '구글시트'),
+    el('input', { value: S.sheetRef, class: 'mono', style: inp + ';flex:1;min-width:0;font-size:12px',
+      placeholder: '그 주 탭의 URL 또는 gid 붙여넣기 (비우면 첫 탭)',
+      oninput: e => { S.sheetRef = e.target.value; save(); } }),
+    sheetBtn, sheetStatus,
+  ]);
+  wrap.append(sheetRow);
+
   const top = el('div', { style: 'display:flex;align-items:center;gap:10px;margin-bottom:12px' }, [
     el('span', { style: 'font-size:12.5px;color:var(--sub);font-weight:600' }, '이번 주 월요일'),
     el('input', { value: S.weekStart, style: inp + ';width:80px', placeholder: '06.15',
@@ -251,6 +263,7 @@ function designPanel() {
     ['헤더 텍스트', el('input', { value: S.theme.header, style: inp + ';flex:1', placeholder: '비우면 제목 없음', oninput: e => { S.theme.header = e.target.value; refreshPreview(); } })],
     ['서브 배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 배지 없음', oninput: e => { S.theme.subtitle = e.target.value; refreshPreview(); } })],
     ['글자 크기', seg(S.theme.fontSize, ['작게', '보통', '크게'].map(v => ({ v, label: v })), v => set('fontSize', v))],
+    ['글자 배율', fontScaleSlider()],
     ['배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => set('bg', v))],
     ['링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '밑줄로 표시' }, { v: false, label: '없음' }], v => set('linkUnderline', v))],
     ['겹칠 때', seg(S.theme.collision, [{ v: '좌우', label: '좌·우' }, { v: '위아래', label: '위·아래' }], v => set('collision', v))],
@@ -268,6 +281,19 @@ function designPanel() {
   }
   wrap.append(box);
   return wrap;
+}
+
+/* 글자 배율 슬라이더 — 카드 패딩·비율은 고정, 텍스트 크기만 60~160%로 조정.
+   드래그 중엔 미리보기만 갱신(패널 재구성 없이). */
+function fontScaleSlider() {
+  const pct = el('span', { style: 'font-size:12.5px;font-weight:700;color:var(--accent);width:46px;text-align:right' }, Math.round((S.theme.fontScale || 1) * 100) + '%');
+  const range = el('input', {
+    type: 'range', min: '60', max: '160', step: '5', value: String(Math.round((S.theme.fontScale || 1) * 100)),
+    style: 'flex:1;accent-color:var(--accent);cursor:pointer',
+    oninput: e => { S.theme.fontScale = (+e.target.value) / 100; pct.textContent = e.target.value + '%'; refreshPreview(); },
+  });
+  const reset = el('button', { style: btn + ';padding:5px 9px;font-size:11px', title: '100%로', onclick: () => { S.theme.fontScale = 1; render(); } }, '↺');
+  return el('div', { style: 'display:flex;align-items:center;gap:10px;flex:1' }, [range, pct, reset]);
 }
 
 /* ── 미리보기(우측) ── */
@@ -324,6 +350,20 @@ function exportCSV() {
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = el('a', { href: URL.createObjectURL(blob), download: `schedule-${S.weekStart}.csv` });
   document.body.append(a); a.click(); a.remove();
+}
+async function loadSheet(btn, status) {
+  if (S.schedule.length && !confirm('현재 편집 내용을 시트 데이터로 덮어써요. 계속할까요?')) return;
+  const orig = btn.textContent;
+  btn.textContent = '불러오는 중…'; btn.disabled = true; status.textContent = '';
+  try {
+    const { schedule, weekStart } = await loadWeekFromSheet(S.sheetRef, S.members, DEFAULT_SHEET_ID);
+    S.schedule = schedule.map((e, i) => ({ ...e, id: 'sh' + i }));
+    if (weekStart) S.weekStart = weekStart;
+    save(); render();
+  } catch (e) {
+    btn.textContent = orig; btn.disabled = false;
+    alert('불러오기 실패: ' + e.message);
+  }
 }
 function importCSV() {
   const f = el('input', { type: 'file', accept: '.csv' });

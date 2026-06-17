@@ -173,13 +173,18 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true,
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
   const S = { ...DEFAULT_SURVIVE, ...(t.survive || {}) };
   const M = Object.fromEntries(members.map(m => [m.id, m]));
-  const SZ = SIZE[t.fontSize] || SIZE.보통;
+  // 카드 비율(패딩·모서리)은 고정하고 "글씨"만 배율로 조정한다.
+  // fontScale은 텍스트 크기에만 곱하고 썸네일·패딩은 건드리지 않는다 → 카드 비율 유지.
+  const base = SIZE[t.fontSize] || SIZE.보통;
+  const sc = Math.max(0.6, Math.min(1.6, +t.fontScale || 1));
+  const SZ = {};
+  for (const k in base) SZ[k] = k === 'thumb' ? base[k] : Math.round(base[k] * sc * 10) / 10;
   const fontStack = FONT[t.font] || FONT.Pretendard;
   const bg = BG[t.bg] || BG.흰색;
   const dark = bg.dark;
@@ -316,6 +321,106 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
   return `<div style="font-family:${fontStack};background:${bg.paper};color:${headInk};padding:16px 14px;max-width:740px">\n${topHeader}${table}\n</div>`;
 }
 
+/* ───── src/sheet.js (인라인, 구글시트 연동) ───── */
+/* sheet.js — 구글시트 연동 (브라우저 전용, gviz JSONP → file://에서도 동작).
+
+   왜 이렇게 바뀌었나: 옛 버전은 SHEET_ID + GID 8개를 하드코딩 → 시트에 새 주차 탭이
+   새 gid로 생기면 안 잡혔다("매주 시트만 고치면" 약속이 깨지는 지점).
+   이제는 "그 주 탭의 URL(또는 gid)을 붙여넣기" 한 줄 → 어떤 탭이든(새 탭 포함) 불러온다.
+   멤버 이름→id 매핑도 하드코딩 대신 현재 members에서 만든다. */
+
+const DEFAULT_SHEET_ID = '1BsAtW0sfSRjyJOQAe3mgVzYuRLa6rUasWOfPca1kEQw';
+const DAYK = ['월', '화', '수', '목', '금', '토', '일'];
+const OFFSET = new Set(['', 'x', 'X', '휴방', '-', '휴뱅', '휴 방', '?', '???']);
+
+/* 입력에서 sheetId·gid 추출. 전체 URL / "#gid=123" / 순수 숫자 gid 모두 허용. */
+function parseSheetRef(input, defaultId = DEFAULT_SHEET_ID) {
+  const s = String(input || '').trim();
+  let sheetId = defaultId, gid = '0';
+  const idm = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (idm) sheetId = idm[1];
+  const gm = s.match(/[#&?]gid=(\d+)/) || s.match(/^(\d+)$/);
+  if (gm) gid = gm[1];
+  return { sheetId, gid };
+}
+
+function gvizFetch(sheetId, gid) {
+  return new Promise((resolve, reject) => {
+    window.google = window.google || {};
+    window.google.visualization = window.google.visualization || {};
+    window.google.visualization.Query = window.google.visualization.Query || {};
+    const s = document.createElement('script');
+    let done = false;
+    const fin = (fn, a) => { if (done) return; done = true; try { s.remove(); } catch {} fn(a); };
+    window.google.visualization.Query.setResponse = resp => fin(resolve, resp);
+    s.onerror = () => fin(reject, new Error('시트를 불러오지 못함 — 공유가 "링크 있는 사람 보기"인지 확인'));
+    s.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?gid=${gid}&tqx=out:json&headers=0`;
+    document.head.appendChild(s);
+    setTimeout(() => fin(reject, new Error('시트 응답 시간 초과')), 15000);
+  });
+}
+
+function gridFromResp(resp) {
+  const rows = (resp.table && resp.table.rows) || [];
+  return rows.map(r => (r.c || []).map(c => c == null ? '' : (c.f != null ? String(c.f) : (c.v != null ? String(c.v) : ''))));
+}
+
+/* "11AM" "9am" "1:30PM" → "11AM"/"9AM"/"1:30PM" 정규화(생성기 timeToMinutes와 호환). */
+function normTime(t) {
+  const m = String(t).trim().toLowerCase().match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m/);
+  if (!m) return String(t).trim();
+  const ap = m[3].toUpperCase() + 'M';
+  return m[2] ? `${m[1]}:${m[2]}${ap}` : `${m[1]}${ap}`;
+}
+
+/* 시트 그리드 → {entries, weekStart}. 레이아웃: 멤버명 칸(요일 헤더 왼쪽 열) +
+   멤버마다 2행(시간 행 / 제목 행), 열 = 월~일. (사용자 시트 구조) */
+function parseWeekGrid(grid, members) {
+  const name2id = {};
+  for (const m of members) name2id[m.name] = m.id;
+
+  let hi = -1, dstart = -1;
+  for (let i = 0; i < grid.length; i++) {
+    const j = grid[i].indexOf('월');
+    if (j >= 0) { hi = i; dstart = j; break; }
+  }
+  if (hi < 0) return null;
+  const mcol = dstart - 1;
+
+  let label = '';
+  for (let i = 0; i < hi && !label; i++)
+    for (const c of grid[i]) if (c && /\d.*[~\-]/.test(c)) { label = c.trim(); break; }
+
+  const entries = []; let id = 0;
+  for (let i = hi + 1; i < grid.length;) {
+    const name = (grid[i][mcol] || '').trim();
+    if (name2id[name]) {
+      const tr = grid[i + 1] || [];
+      for (let di = 0; di < 7; di++) {
+        const ci = dstart + di;
+        const t = (grid[i][ci] || '').trim();
+        const title = (tr[ci] || '').trim();
+        if (OFFSET.has(t) || title === '휴방') continue;
+        entries.push({ id: 's' + id++, day: DAYK[di], time: normTime(t), mem: name2id[name], title: title.replace(/\s*\n\s*/g, ' ').trim(), url: '' });
+      }
+      i += 2;
+    } else i++;
+  }
+  const m = label.match(/(\d{2})(\d{2})/);
+  const weekStart = m ? `${m[1]}.${m[2]}` : '';
+  return { entries, weekStart, label };
+}
+
+/* 한 탭 불러오기 → {schedule, weekStart}. 실패 시 throw. */
+async function loadWeekFromSheet(input, members, defaultId = DEFAULT_SHEET_ID) {
+  const { sheetId, gid } = parseSheetRef(input, defaultId);
+  const resp = await gvizFetch(sheetId, gid);
+  if (!resp || resp.status !== 'ok') throw new Error('시트 응답 오류 (gid가 맞는지 확인)');
+  const w = parseWeekGrid(gridFromResp(resp), members);
+  if (!w || !w.entries.length) throw new Error('이 탭에서 스케줄을 못 찾았어요 (멤버 이름·요일 행 확인)');
+  return { schedule: w.entries, weekStart: w.weekStart };
+}
+
 /* ───── 기본 데이터 (data/*.csv에서 빌드시 주입) ───── */
 const DEFAULT_MEMBERS_CSV = "id,멤버,배경색,글자색,기본URL\nchoiaeri,최애리,#F2A93B,#3A2A00,\nyeowooyeon,여우연,#8AB4F8,#0A2A6B,\nnano,나노,#B7BBC0,#202124,\nnunyo,눈요,#7FD6EB,#063B4A,\nseolhong,설홍,#FF5A5A,#FFFFFF,\nruchel,루첼,#4A4A4A,#FFFFFF,\nbayblue,베이블루,#3A56C5,#FFFFFF,\n";
 const DEFAULT_SCHEDULE_CSV = "요일,날짜,시간,멤버,제목,URL\n월,06.15,9AM,choiaeri,♥아침 뉴스♥,\n월,06.15,11AM,yeowooyeon,소소한 소통,\n월,06.15,12PM,nano,카페유머글,\n월,06.15,2PM,nunyo,동요 방송,\n월,06.15,2PM,seolhong,기생수 같이보기,\n월,06.15,7PM,ruchel,니케 스토리 21지 부터,\n화,06.16,9PM,seolhong,후열 롤,\n수,06.17,9AM,choiaeri,♥아침 뉴스♥,\n수,06.17,4PM,yeowooyeon,콘서트 전 마지막 방송..!!,\n수,06.17,7PM,nano,영풍트럭운전,\n수,06.17,7PM,ruchel,증명의 날,\n목,06.18,9AM,choiaeri,♥아침 뉴스♥,\n목,06.18,2PM,seolhong,똥겜핀볼,\n목,06.18,6PM,nunyo,소통 스플릿픽션 w.루첼,\n목,06.18,7PM,ruchel,눈요랑 스플릿픽션,\n목,06.18,8PM,yeowooyeon,여우연 콘서트 FOXLOG : 우리의 기록,\n금,06.19,8AM,nano,아침노래방/월드컵응원방,\n금,06.19,8AM,ruchel,월드컵 응원,\n금,06.19,9AM,choiaeri,♥아침 뉴스♥,\n금,06.19,10AM,seolhong,축구월드컵 입중계,\n금,06.19,4PM,yeowooyeon,콘서트 후열 회식 주루마블!,\n금,06.19,6PM,nunyo,괴식 마추기,\n토,06.20,2PM,seolhong,애교데이 리턴즈!,\n토,06.20,4PM,yeowooyeon,니케 푹먹 데이,\n토,06.20,6PM,nunyo,블루아카이브 스토리,\n일,06.21,12PM,nano,레데리2,\n일,06.21,2PM,seolhong,너목(木)보 대회 시상,\n일,06.21,4PM,yeowooyeon,애교데이,\n일,06.21,6PM,nunyo,동화요정,\n일,06.21,7PM,ruchel,야랄소통,\n";
@@ -353,9 +458,9 @@ function defaultState() {
   }));
   const weekStart = (rows.find(r => r.요일 === '월' && r.날짜) || {}).날짜 || '06.15';
   return {
-    members, schedule, weekStart,
+    members, schedule, weekStart, sheetRef: '',
     theme: {
-      header: '주간 스케줄표', subtitle: '', fontSize: '보통', bg: '흰색',
+      header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, bg: '흰색',
       linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽',
       wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
     },
@@ -373,7 +478,7 @@ function load() {
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      members: S.members, schedule: S.schedule, weekStart: S.weekStart, theme: S.theme,
+      members: S.members, schedule: S.schedule, weekStart: S.weekStart, theme: S.theme, sheetRef: S.sheetRef,
     }));
   } catch {}
 }
@@ -480,6 +585,18 @@ function schedulePanel() {
   const wrap = el('div', { style: 'flex:1;overflow-y:auto;padding:18px 22px' });
   wrap.append(panelHead('스케줄 · ' + S.weekStart + ' 주', '한 줄 = 방송 하나. 요일·시간·멤버·제목·링크를 바로 고치면 오른쪽 미리보기에 즉시 반영돼요.'));
 
+  // 구글시트 연동 — 그 주 탭의 URL(또는 gid)을 붙여넣고 불러오기(현재 편집을 덮어씀).
+  const sheetStatus = el('span', { id: 'sheet-status', style: 'font-size:11.5px;color:var(--sub)' }, '');
+  const sheetBtn = el('button', { style: btn, onclick: () => loadSheet(sheetBtn, sheetStatus) }, '↓ 시트에서 불러오기');
+  const sheetRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:10px 12px;background:#fff;border:1px solid var(--hair);border-radius:11px' }, [
+    el('span', { style: 'font-size:12.5px;font-weight:700;flex-shrink:0' }, '구글시트'),
+    el('input', { value: S.sheetRef, class: 'mono', style: inp + ';flex:1;min-width:0;font-size:12px',
+      placeholder: '그 주 탭의 URL 또는 gid 붙여넣기 (비우면 첫 탭)',
+      oninput: e => { S.sheetRef = e.target.value; save(); } }),
+    sheetBtn, sheetStatus,
+  ]);
+  wrap.append(sheetRow);
+
   const top = el('div', { style: 'display:flex;align-items:center;gap:10px;margin-bottom:12px' }, [
     el('span', { style: 'font-size:12.5px;color:var(--sub);font-weight:600' }, '이번 주 월요일'),
     el('input', { value: S.weekStart, style: inp + ';width:80px', placeholder: '06.15',
@@ -573,6 +690,7 @@ function designPanel() {
     ['헤더 텍스트', el('input', { value: S.theme.header, style: inp + ';flex:1', placeholder: '비우면 제목 없음', oninput: e => { S.theme.header = e.target.value; refreshPreview(); } })],
     ['서브 배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 배지 없음', oninput: e => { S.theme.subtitle = e.target.value; refreshPreview(); } })],
     ['글자 크기', seg(S.theme.fontSize, ['작게', '보통', '크게'].map(v => ({ v, label: v })), v => set('fontSize', v))],
+    ['글자 배율', fontScaleSlider()],
     ['배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => set('bg', v))],
     ['링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '밑줄로 표시' }, { v: false, label: '없음' }], v => set('linkUnderline', v))],
     ['겹칠 때', seg(S.theme.collision, [{ v: '좌우', label: '좌·우' }, { v: '위아래', label: '위·아래' }], v => set('collision', v))],
@@ -590,6 +708,19 @@ function designPanel() {
   }
   wrap.append(box);
   return wrap;
+}
+
+/* 글자 배율 슬라이더 — 카드 패딩·비율은 고정, 텍스트 크기만 60~160%로 조정.
+   드래그 중엔 미리보기만 갱신(패널 재구성 없이). */
+function fontScaleSlider() {
+  const pct = el('span', { style: 'font-size:12.5px;font-weight:700;color:var(--accent);width:46px;text-align:right' }, Math.round((S.theme.fontScale || 1) * 100) + '%');
+  const range = el('input', {
+    type: 'range', min: '60', max: '160', step: '5', value: String(Math.round((S.theme.fontScale || 1) * 100)),
+    style: 'flex:1;accent-color:var(--accent);cursor:pointer',
+    oninput: e => { S.theme.fontScale = (+e.target.value) / 100; pct.textContent = e.target.value + '%'; refreshPreview(); },
+  });
+  const reset = el('button', { style: btn + ';padding:5px 9px;font-size:11px', title: '100%로', onclick: () => { S.theme.fontScale = 1; render(); } }, '↺');
+  return el('div', { style: 'display:flex;align-items:center;gap:10px;flex:1' }, [range, pct, reset]);
 }
 
 /* ── 미리보기(우측) ── */
@@ -646,6 +777,20 @@ function exportCSV() {
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = el('a', { href: URL.createObjectURL(blob), download: `schedule-${S.weekStart}.csv` });
   document.body.append(a); a.click(); a.remove();
+}
+async function loadSheet(btn, status) {
+  if (S.schedule.length && !confirm('현재 편집 내용을 시트 데이터로 덮어써요. 계속할까요?')) return;
+  const orig = btn.textContent;
+  btn.textContent = '불러오는 중…'; btn.disabled = true; status.textContent = '';
+  try {
+    const { schedule, weekStart } = await loadWeekFromSheet(S.sheetRef, S.members, DEFAULT_SHEET_ID);
+    S.schedule = schedule.map((e, i) => ({ ...e, id: 'sh' + i }));
+    if (weekStart) S.weekStart = weekStart;
+    save(); render();
+  } catch (e) {
+    btn.textContent = orig; btn.disabled = false;
+    alert('불러오기 실패: ' + e.message);
+  }
 }
 function importCSV() {
   const f = el('input', { type: 'file', accept: '.csv' });

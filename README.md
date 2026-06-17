@@ -11,6 +11,7 @@
 src/generate.mjs   핵심. 순수 함수 (의존성 0, import 0). (members, schedule, dates, theme) → HTML 문자열.
                    Node에서도 브라우저에서도 그대로 쓴다. 네이버 생존 여부는 SURVIVE 플래그로 제어.
 src/csv.mjs        작은 CSV 파서/직렬화 (의존성 0).
+src/sheet.js       구글시트 연동(브라우저). 탭 URL/gid 붙여넣으면 그 주를 불러옴(gviz JSONP, file:// OK).
 src/ui.js          바닐라 UI (React·Babel·CDN 없음). 빌드시 카페대문.html로 인라인.
 build.mjs          node build.mjs → src/* 를 단일 파일 카페대문.html 로 인라인(더블클릭·오프라인 동작).
 카페대문.html       ★ 빌드 산출물. 더블클릭으로 열어 편집→복사. (build.mjs가 생성)
@@ -24,8 +25,11 @@ data/schedule.csv  이번 주 스케줄 시드.
 ## 쓰는 법 (둘 중 하나)
 
 **A. 브라우저 UI (권장)** — `카페대문.html` 더블클릭 → 스케줄/멤버/디자인 편집 → **HTML 복사** →
-대문 HTML 편집에 붙여넣기. 편집 내용은 브라우저에 자동 저장. CSV 가져오기/내보내기 지원.
-UI를 고쳤으면 `node build.mjs`로 다시 빌드.
+대문 HTML 편집에 붙여넣기. 편집 내용은 브라우저에 자동 저장.
+- **구글시트 연동**: 스케줄 탭 상단에 그 주 시트 탭의 URL(또는 gid)을 붙여넣고 "시트에서 불러오기".
+  옛 버전처럼 gid를 하드코딩하지 않으므로 새 주차 탭도 그대로 불러온다.
+- **글자 배율**(디자인 탭): 카드 크기·비율은 고정하고 글씨만 60~160%로 조절.
+- CSV 가져오기/내보내기 지원. UI 코드를 고쳤으면 `node build.mjs`로 다시 빌드.
 
 **B. CLI** — `data/schedule.csv` 고치고 `node cli.mjs` → `out.html` + 클립보드 복사.
 

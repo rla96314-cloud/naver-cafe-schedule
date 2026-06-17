@@ -101,13 +101,18 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true,
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
   const S = { ...DEFAULT_SURVIVE, ...(t.survive || {}) };
   const M = Object.fromEntries(members.map(m => [m.id, m]));
-  const SZ = SIZE[t.fontSize] || SIZE.보통;
+  // 카드 비율(패딩·모서리)은 고정하고 "글씨"만 배율로 조정한다.
+  // fontScale은 텍스트 크기에만 곱하고 썸네일·패딩은 건드리지 않는다 → 카드 비율 유지.
+  const base = SIZE[t.fontSize] || SIZE.보통;
+  const sc = Math.max(0.6, Math.min(1.6, +t.fontScale || 1));
+  const SZ = {};
+  for (const k in base) SZ[k] = k === 'thumb' ? base[k] : Math.round(base[k] * sc * 10) / 10;
   const fontStack = FONT[t.font] || FONT.Pretendard;
   const bg = BG[t.bg] || BG.흰색;
   const dark = bg.dark;
