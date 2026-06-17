@@ -157,11 +157,14 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     // data: 이미지는 네이버가 제거(⑥) → 외부 http(s) URL만 허용.
     const img = (S.inlineImg && m.img && /^https?:\/\//i.test(m.img)) ? m.img : null;
 
-    const pill =
+    const timeTxt = escapeHtml(formatTime(c.time, t.timeFmt));
+    const mkPill = (fs, pad, rad) =>
       `<span style="display:inline-block;background:${pillBg};color:#2A2724;` +
-      (radius ? `border-radius:9px;` : '') +
-      `padding:2px 8px;font-size:${SZ.pill}px;font-weight:800;white-space:nowrap">` +
-      `${escapeHtml(formatTime(c.time, t.timeFmt))}</span>`;
+      (rad ? `border-radius:${rad}px;` : '') +
+      `padding:${pad};font-size:${fs}px;font-weight:800;white-space:nowrap">${timeTxt}</span>`;
+    const pill = mkPill(SZ.pill, '2px 8px', radius ? 9 : 0);
+    // 좁은 7열에서 이름 옆에 나란히 두려고 더 작은 알약(3글자 이름도 한 줄에 들어오게)
+    const pillSm = mkPill(Math.max(8.5, SZ.pill - 2), '1px 5px', radius ? 7 : 0);
 
     // 이름은 nowrap — 좁은 칸에서도 "여우연"이 글자별로 세로로 쪼개지지 않게(알약처럼 네이버 보존).
     const nameHtml = `<b style="font-size:${SZ.name}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
@@ -187,8 +190,8 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       // 고정폭 테이블(far-right) 대신 inline 흐름으로 둔다 → 자리 없으면 알약이 아랫줄로
       // 내려갈 뿐 카드 밖으로 삐져나오지 않는다. 이름은 nowrap이라 온전히 유지.
       body =
-        `<div style="text-align:${align};line-height:1.45">${link(nameHtml)} ` +
-        `<span style="display:inline-block;vertical-align:middle">${pill}</span></div>${titleBlock}` +
+        `<div style="text-align:${align};line-height:1.5">${link(nameHtml)} ` +
+        `<span style="display:inline-block;vertical-align:middle">${pillSm}</span></div>${titleBlock}` +
         (imgTag ? `<div style="text-align:right;margin-top:6px">${imgTag}</div>` : '');
     } else {
       // 기본: 시간 알약 윗줄 오른쪽, 이름+제목이 칸 전체 폭.
@@ -201,7 +204,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const style =
       `background:${cardBg};` +
       (radius ? `border-radius:${radius}px;` : '') +
-      `padding:10px 12px;${shadow}box-sizing:border-box;word-break:keep-all;` +
+      `padding:10px 9px;${shadow}box-sizing:border-box;word-break:keep-all;` +
       (ch ? `height:${ch}px;overflow:hidden;` : '') +
       (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 
@@ -224,7 +227,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       } else {
         inner = es.map((c, i) => `<div style="${i ? 'margin-top:6px' : ''}">${card(c)}</div>`).join('');
       }
-      rows += `      <td style="padding:5px 6px;vertical-align:top">${inner}</td>\n`;
+      rows += `      <td style="padding:5px 4px;vertical-align:top">${inner}</td>\n`;
     }
     rows += `    </tr>\n`;
   }
