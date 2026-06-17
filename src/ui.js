@@ -413,7 +413,14 @@ async function loadAllTabs(btn) {
   const orig = btn.textContent; btn.disabled = true;
   try {
     const weeks = await loadTabsFromSheet(S.sheetId || DEFAULT_SHEET_ID, S.sheetTabs, S.members, (d, t) => { btn.textContent = `불러오는 중… ${d}/${t}`; });
-    if (!weeks.length) { alert('불러온 탭이 없어요. 시트 공유("링크 있는 사람 보기")·ID·gid를 확인해줘요.'); btn.textContent = orig; btn.disabled = false; return; }
+    if (!weeks.length) {
+      let why = '';
+      try { await loadWeekFromSheet((S.sheetTabs[0] || {}).gid || '0', S.members, S.sheetId || DEFAULT_SHEET_ID); }
+      catch (e) { why = e.message; }
+      alert('불러온 탭이 없어요.' + (why ? '\n원인: ' + why : '') +
+        '\n• 시트 공유가 "링크 있는 사람 보기"인지 확인\n• 로그인 계정 문제일 수 있어요 — 시크릿(incognito) 창에서 열어보면 대부분 해결돼요.');
+      btn.textContent = orig; btn.disabled = false; return;
+    }
     S.weeks = weeks.map(w => ({ ...w, schedule: w.schedule.map((e, i) => ({ ...e, id: 'sh' + i })) }));
     S.weekIdx = S.weeks.length - 1; S.selId = null; save(); render();
   } catch (e) { alert('불러오기 실패: ' + e.message); btn.textContent = orig; btn.disabled = false; }

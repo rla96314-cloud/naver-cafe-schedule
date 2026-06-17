@@ -26,6 +26,7 @@ export function parseSheetRef(input, defaultId = DEFAULT_SHEET_ID) {
   let sheetId = defaultId, gid = '0';
   const idm = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if (idm) sheetId = idm[1];
+  else if (/^[a-zA-Z0-9_-]{30,}$/.test(s)) sheetId = s; // 순수 시트 ID(약 44자)
   const gm = s.match(/[#&?]gid=(\d+)/) || s.match(/^(\d+)$/);
   if (gm) gid = gm[1];
   return { sheetId, gid };
@@ -110,7 +111,8 @@ export async function loadWeekFromSheet(input, members, defaultId = DEFAULT_SHEE
 
 /* 여러 탭을 순서대로 불러와 주(week) 배열로. 실패한 탭은 건너뛴다.
    onProgress(done, total)로 진행상황 알림(선택). */
-export async function loadTabsFromSheet(sheetId, tabs, members, onProgress) {
+export async function loadTabsFromSheet(sheetIdOrUrl, tabs, members, onProgress) {
+  const sheetId = parseSheetRef(sheetIdOrUrl).sheetId; // URL이든 순수 ID든 받아서 ID로
   const weeks = [];
   for (let i = 0; i < tabs.length; i++) {
     const tab = tabs[i];
