@@ -35,7 +35,8 @@ function defaultState() {
     // 시트 탭별로 분류 — 각 주(week)가 시트 탭 하나에 대응. weeks[weekIdx]가 현재 편집 대상.
     weeks: [{ label: weekStart + ' 주', weekStart, schedule, gid: null }],
     weekIdx: 0,
-    sheetId: '', sheetTabs: DEFAULT_SHEET_TABS.map(t => ({ ...t })),
+    sheetId: 'https://docs.google.com/spreadsheets/d/' + DEFAULT_SHEET_ID + '/edit',
+    sheetTabs: DEFAULT_SHEET_TABS.map(t => ({ ...t })),
     theme: {
       header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, bg: '흰색',
       linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽',
