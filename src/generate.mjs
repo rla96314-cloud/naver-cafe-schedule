@@ -1,0 +1,232 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   generate.mjs — 네이버 카페 대문용 주간 스케줄 HTML 생성기 (순수 함수)
+
+   원칙
+   - 의존성 0. import 0. 모듈 전역 데이터 0. → Node에서도 브라우저에서도 그대로 import.
+   - 입력은 데이터, 출력은 문자열. DOM·React·localStorage·fetch 일절 안 씀.
+   - "네이버에서 살아남는 마크업만" 쓴다. 무엇이 살아남는지는 spike.html 실측으로 확정.
+     → 그 결과를 SURVIVE 플래그로 표현. 죽는 스타일은 false 한 줄로 끈다.
+
+   핵심 규칙(설계문서):
+   - 칸 = <a href> 로 감싼 셀. URL이 없거나 플레이스홀더(…/CHANNEL_ID)면 <a> 없이 일반 셀.
+   - 같은 시간대 2명 충돌 시 좌·우(narrow) 또는 위·아래 배치.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* 스파이크로 확정할 "네이버 생존 여부" 플래그.
+   - true  = 네이버가 보존한다고 확인됨(또는 보존한다고 가정해도 안전).
+   - false = 네이버가 제거함 → 생성기가 아예 안 내보냄(미리보기=결과 보장).
+   spike.html 붙여넣기 결과로 이 값만 고치면 전체 출력이 그에 맞게 degrade 된다. */
+export const DEFAULT_SURVIVE = {
+  linkAnchor:   true,   // <a href> 클릭 링크
+  bgColor:      true,   // 셀/카드 배경색 (inline background)
+  borderRadius: true,   // 카드 둥근 모서리
+  boxShadow:    false,  // 그림자 — 네이버가 거른다고 알려짐. 스파이크로 확인 전 OFF.
+  inlineImg:    false,  // data:/외부 <img> 썸네일 — 거의 확실히 제거됨. 확인 전 OFF.
+};
+
+export const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
+const DOW = { 월:'월요일', 화:'화요일', 수:'수요일', 목:'목요일', 금:'금요일', 토:'토요일', 일:'일요일' };
+const DAY_TONE = { 토:'#2F73D8', 일:'#D8392F' }; // 주말 색, 평일은 잉크색
+
+const SIZE = {
+  작게: { name:12,   title:10.5, pill:9.5,  dow:10.5, date:17, big:16,   thumb:34 },
+  보통: { name:14,   title:12,   pill:11,   dow:11.5, date:21, big:18.5, thumb:42 },
+  크게: { name:16,   title:13.5, pill:12.5, dow:12.5, date:25, big:21,   thumb:50 },
+};
+const FONT = {
+  Pretendard: "'Pretendard', -apple-system, sans-serif",
+  나눔고딕:   "'Nanum Gothic', sans-serif",
+  검은고딕:   "'Black Han Sans', 'Pretendard', sans-serif",
+};
+const BG = {
+  흰색:   { paper:'#FFFFFF', dark:false },
+  종이:   { paper:'#F6F4EF', dark:false },
+  어둡게: { paper:'#1C1A18', dark:true  },
+};
+
+/* "11AM" "9am" "1:30PM" → 분(정렬용). 못 읽으면 큰 수(맨 끝). */
+export function timeToMinutes(t) {
+  const m = String(t).trim().toLowerCase().match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b/);
+  if (!m) return 99999;
+  let h = (+m[1]) % 12;
+  if (m[3] === 'p') h += 12;
+  return h * 60 + (+(m[2] || 0));
+}
+/* 표시용 시간. mode '24시'면 HH:MM, 아니면 원문 그대로. */
+export function formatTime(t, mode) {
+  if (mode !== '24시') return String(t);
+  const mm = timeToMinutes(t);
+  if (mm >= 99999) return String(t);
+  return `${String(Math.floor(mm / 60)).padStart(2, '0')}:${String(mm % 60).padStart(2, '0')}`;
+}
+
+/* URL이 실제로 링크 걸 만한가? 빈값·플레이스홀더(…, CHANNEL_ID)면 false → 일반 셀. */
+export function isUsableUrl(u) {
+  const s = String(u || '').trim();
+  if (!s) return false;
+  if (s.includes('…') || s.includes('...') || /CHANNEL_ID/i.test(s)) return false;
+  return true;
+}
+function href(u) {
+  let s = String(u).trim();
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  return escapeAttr(s);
+}
+
+/* HTML 이스케이프 — 제목에 <,>,& 들어가도 안 깨지게. (현재 생성기엔 없던 구멍) */
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/"/g, '&quot;');
+}
+
+/* ── 본체 ───────────────────────────────────────────────────────────────
+   인자:
+     members  : [{ id, name, bg, fg, url }]
+     schedule : [{ day, time, mem, title, url }]   // mem = members[].id
+     dates    : { 월:'06.15', ... }
+     theme    : 아래 기본값 참고 (survive 포함)
+   반환: 네이버 대문에 붙여넣을 HTML 문자열 한 덩어리. */
+export function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme = {} } = {}) {
+  const t = {
+    font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
+    collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
+    header:'', subtitle:'', logo:'',
+    survive: DEFAULT_SURVIVE,
+    ...theme,
+  };
+  const S = { ...DEFAULT_SURVIVE, ...(t.survive || {}) };
+  const M = Object.fromEntries(members.map(m => [m.id, m]));
+  const SZ = SIZE[t.fontSize] || SIZE.보통;
+  const fontStack = FONT[t.font] || FONT.Pretendard;
+  const bg = BG[t.bg] || BG.흰색;
+  const dark = bg.dark;
+  const align = t.align === '가운데' ? 'center' : 'left';
+  const radius = S.borderRadius ? (+t.radius || 0) : 0;
+
+  const headInk  = dark ? '#ECE8E1' : '#2A2724';
+  const dowBg    = dark ? 'rgba(255,255,255,0.12)' : '#ECEAE6';
+  const dowFg    = dark ? 'rgba(255,255,255,0.7)'  : '#7C766C';
+  const headLine = dark ? '#5A554E' : '#D9D4CB';
+  const pillBg   = dark ? '#F3F0EA' : '#FFFFFF';
+  const shadow   = S.boxShadow ? 'box-shadow:0 2px 5px rgba(0,0,0,.12);' : '';
+
+  const titleWrap = t.wrap === '말줄임'
+    ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
+    : 'overflow-wrap:break-word;word-break:keep-all;line-height:1.3';
+
+  const TIMES = [...new Set(schedule.map(s => s.time))].sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+
+  /* 요일 헤더 */
+  let head = '';
+  for (const day of DAYS) {
+    const tone = DAY_TONE[day] || headInk;
+    head +=
+      `      <td style="padding:0 4px 12px;text-align:center;vertical-align:top">` +
+      `<span style="display:inline-block;background:${dowBg};color:${dowFg};` +
+      (radius ? `border-radius:13px;` : '') +
+      `padding:3px 11px;font-size:${SZ.dow}px;font-weight:600">${DOW[day]}</span>` +
+      `<div style="font-size:${SZ.date}px;font-weight:800;color:${tone};margin-top:7px;letter-spacing:-0.5px">` +
+      `${escapeHtml(dates[day] || '')}</div></td>\n`;
+  }
+
+  /* 카드 1장 */
+  const card = (c, narrow) => {
+    const m = M[c.mem];
+    if (!m) return '';
+    const cardBg = S.bgColor ? m.bg : '#FFFFFF';
+    const linkable = S.linkAnchor && isUsableUrl(c.url || m.url);
+    const url = c.url || m.url;
+    const img = S.inlineImg ? m.img : null;
+
+    const pill =
+      `<span style="display:inline-block;background:${pillBg};color:#2A2724;` +
+      (radius ? `border-radius:9px;` : '') +
+      `padding:2px 8px;font-size:${SZ.pill}px;font-weight:800;white-space:nowrap">` +
+      `${escapeHtml(formatTime(c.time, t.timeFmt))}</span>`;
+    const name = `<b style="font-size:${SZ.name}px;color:${m.fg}">${escapeHtml(m.name)}</b>`;
+    const title = c.title
+      ? `<div style="font-size:${SZ.title}px;color:${m.fg};margin-top:5px;text-align:${align};${titleWrap}">${escapeHtml(c.title)}</div>`
+      : '';
+
+    let body;
+    if (narrow) {
+      body = name + title + `<div style="margin-top:7px;text-align:${align}">${pill}</div>`;
+    } else if (img) {
+      const ts = SZ.thumb;
+      body =
+        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
+        `<td style="padding:0;vertical-align:top">${name}${title}</td>` +
+        `<td style="padding:0 0 0 6px;vertical-align:top;text-align:right;width:${ts}px">` +
+        `${pill}<br><img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;` +
+        `object-fit:cover;${radius ? `border-radius:9px;` : ''}display:inline-block;margin-top:6px"></td>` +
+        `</tr></table>`;
+    } else {
+      body =
+        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
+        `<td style="padding:0;text-align:left;vertical-align:middle">${name}</td>` +
+        `<td style="padding:0 0 0 4px;text-align:right;vertical-align:middle;width:1%">${pill}</td>` +
+        `</tr></table>${title}`;
+    }
+
+    const style =
+      `background:${cardBg};` +
+      (radius ? `border-radius:${radius}px;` : '') +
+      `padding:10px 12px;${shadow}box-sizing:border-box;word-break:keep-all;` +
+      (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`) +
+      (linkable ? `text-decoration:none;` : '');
+
+    return linkable
+      ? `<a href="${href(url)}" class="schd-card" style="${style}">${body}</a>`
+      : `<div class="schd-card" style="${style}">${body}</div>`;
+  };
+
+  /* 시간 행 */
+  let rows = '';
+  for (const time of TIMES) {
+    rows += `    <tr>\n`;
+    for (const day of DAYS) {
+      const es = schedule
+        .filter(s => s.day === day && s.time === time)
+        .sort((a, b) => members.findIndex(m => m.id === a.mem) - members.findIndex(m => m.id === b.mem));
+      if (!es.length) { rows += `      <td></td>\n`; continue; }
+      let inner;
+      if (es.length > 1 && t.collision === '좌우') {
+        inner = es.map((c, i) =>
+          (i ? '<span style="display:inline-block;width:2%"></span>' : '') + card(c, true)).join('');
+      } else {
+        inner = es.map((c, i) => `<div style="${i ? 'margin-top:6px' : ''}">${card(c)}</div>`).join('');
+      }
+      rows += `      <td style="padding:5px 6px;vertical-align:top">${inner}</td>\n`;
+    }
+    rows += `    </tr>\n`;
+  }
+
+  /* 상단 헤더(제목 + 배지) */
+  let topHeader = '';
+  if (t.header || t.subtitle) {
+    const emS = SZ.big + 14;
+    const emblem = (S.inlineImg && t.logo)
+      ? `<img src="${escapeAttr(t.logo)}" alt="" style="width:${emS}px;height:${emS}px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:10px">`
+      : '';
+    const titleTxt = t.header
+      ? `${emblem}<b style="font-size:${SZ.big}px;color:${headInk};vertical-align:middle">${escapeHtml(t.header)}</b>`
+      : '';
+    const badge = t.subtitle
+      ? `<span style="display:inline-block;background:#FF5A5A;color:#fff;${radius ? 'border-radius:18px;' : ''}padding:6px 14px;font-size:${SZ.dow + 1}px;font-weight:700">📢 ${escapeHtml(t.subtitle)}</span>`
+      : '';
+    topHeader =
+      `  <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:10px"><tr>` +
+      `<td style="padding:0;text-align:left;vertical-align:middle">${titleTxt}</td>` +
+      `<td style="padding:0;text-align:right;vertical-align:middle">${badge}</td></tr></table>\n` +
+      `  <div style="border-bottom:2px solid ${headLine};margin-bottom:14px"></div>\n`;
+  }
+
+  const table =
+    `  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;table-layout:fixed">\n` +
+    `    <tbody>\n    <tr>\n${head}    </tr>\n${rows}    </tbody>\n  </table>`;
+
+  return `<div style="font-family:${fontStack};background:${bg.paper};color:${headInk};padding:16px 14px;max-width:740px">\n${topHeader}${table}\n</div>`;
+}
