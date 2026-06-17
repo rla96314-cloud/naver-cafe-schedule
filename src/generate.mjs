@@ -100,8 +100,8 @@ function escapeAttr(s) {
 export function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme = {} } = {}) {
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
-    collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:0, pillPos:'옆',
+    collision:'좌우', radius:0, bg:'흰색', timeFmt:'AM/PM',
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:60, pillPos:'옆',
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -182,27 +182,26 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       : inner;
     const titleBlock = c.title ? `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${link(titleSpan)}</div>` : '';
 
-    const ts = SZ.thumb;
-    const imgTag = img ? `<img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;object-fit:cover;${radius ? 'border-radius:9px;' : ''}display:inline-block">` : '';
+    // 썸네일 = 이름 앞 작은 아바타(1.5em, em이라 fitCards가 글자와 함께 축소). 60px 카드에도 맞음.
+    const imgTag = img ? `<img src="${escapeAttr(img)}" alt="" style="width:1.5em;height:1.5em;object-fit:cover;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:4px">` : '';
     const pillInline = t.pillPos !== '윗줄'; // 기본: 이름 좌상단 / 시간 우상단 코너
     let body;
     if (narrow) {
-      // 좌우 충돌: 세로 스택(이름/제목/알약)
-      body = `<div style="text-align:${align}">${link(nameHtml + (c.title ? `<br>${titleSpan}` : ''))}</div>` +
+      // 좌우 충돌: 세로 스택(아바타+이름/제목/알약)
+      body = `<div style="text-align:${align}">${imgTag}${link(nameHtml + (c.title ? `<br>${titleSpan}` : ''))}</div>` +
              `<div style="margin-top:6px;text-align:${align}">${pillSm}</div>`;
     } else if (pillInline) {
-      // 이름 좌상단(왼쪽 끝) / 시간 우상단(오른쪽 끝). vertical-align:top = 위 끝 정렬.
-      // 좁아서 넘치면 fitCards가 글자를 줄여 한 줄을 유지.
+      // 이름(+아바타) 좌상단 끝 / 시간 우상단 끝. vertical-align:top = 위 끝 정렬.
+      // 좁아서 넘치면 fitCards가 글자를 줄여 한 줄 유지.
       body =
         `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
-        `<td style="padding:0;text-align:left;vertical-align:top">${link(nameHtml)}</td>` +
+        `<td style="padding:0;text-align:left;vertical-align:top">${imgTag}${link(nameHtml)}</td>` +
         `<td style="padding:0 0 0 4px;text-align:right;vertical-align:top;width:1%;white-space:nowrap">${pillSm}</td>` +
-        `</tr></table>${titleBlock}` +
-        (imgTag ? `<div style="text-align:right;margin-top:6px">${imgTag}</div>` : '');
+        `</tr></table>${titleBlock}`;
     } else {
-      // 시간 알약 윗줄 오른쪽, 이름+제목 전체 폭.
-      const topRight = `<div style="text-align:right;line-height:1">${pill}${imgTag ? `<br><span style="display:inline-block;margin-top:6px">${imgTag}</span>` : ''}</div>`;
-      body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${link(nameHtml)}</div>${titleBlock}`;
+      // 시간 알약 윗줄 오른쪽, 이름(+아바타)+제목 전체 폭.
+      const topRight = `<div style="text-align:right;line-height:1">${pill}</div>`;
+      body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${imgTag}${link(nameHtml)}</div>${titleBlock}`;
     }
 
     // 카드는 항상 고정 높이 → 균일 격자(내용 없어도 유지). 넘치면 fitCards가 글자 축소, 그래도 넘으면 잘림.

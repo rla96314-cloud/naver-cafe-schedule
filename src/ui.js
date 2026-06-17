@@ -38,9 +38,9 @@ function defaultState() {
     sheetId: 'https://docs.google.com/spreadsheets/d/' + DEFAULT_SHEET_ID + '/edit',
     sheetTabs: DEFAULT_SHEET_TABS.map(t => ({ ...t })),
     theme: {
-      header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, cardHeight: 0, bg: '흰색',
-      linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽', pillPos: '옆',
-      wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
+      header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, cardHeight: 60, bg: '흰색',
+      linkUnderline: true, collision: '좌우', radius: 0, align: '왼쪽', pillPos: '옆',
+      wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', logo: '', dv: 2,
     },
     section: 'schedule', selId: null,
   };
@@ -54,6 +54,10 @@ function load() {
       const m = { ...base, ...raw, section: 'schedule', selId: null };
       // theme는 깊게 병합 — 새로 추가된 테마 키(pillPos 등)의 기본값이 옛 저장본에도 들어가게.
       m.theme = { ...base.theme, ...(raw.theme || {}) };
+      // 디자인 버전 마이그레이션 — 옛 저장본도 새 기본 룩(60px 직사각형 코너)으로 한 번 갱신.
+      if ((raw.theme && raw.theme.dv || 0) < base.theme.dv) {
+        m.theme.cardHeight = 60; m.theme.radius = 0; m.theme.pillPos = '옆'; m.theme.dv = base.theme.dv;
+      }
       // 옛 단일주 저장본 마이그레이션
       if (!Array.isArray(m.weeks) || !m.weeks.length) {
         m.weeks = raw.schedule ? [{ label: (raw.weekStart || '주') + ' 주', weekStart: raw.weekStart || '', schedule: raw.schedule, gid: null }] : base.weeks;
@@ -319,16 +323,27 @@ function membersPanel() {
       oninput: ev => { m.fg = ev.target.value; preview.style.color = ev.target.value; refreshPreview(); } });
     const urlIn = el('input', { value: m.url, class: 'mono', style: inp + ';flex:1;min-width:0;font-size:12px', placeholder: 'chzzk.naver.com/...',
       oninput: ev => { m.url = ev.target.value; refreshPreview(); } });
-    list.append(el('div', { style: 'display:flex;align-items:center;gap:8px;padding:9px 11px;background:#fff;border:1px solid var(--hair);border-radius:11px' }, [
-      preview,
-      el('span', { style: 'width:48px;font-size:13.5px;font-weight:700;flex-shrink:0' }, m.name),
-      el('span', { style: 'font-size:11px;color:var(--sub)' }, '배경'), bgIn,
-      el('span', { style: 'font-size:11px;color:var(--sub)' }, '글자'), fgIn,
-      urlIn,
+    // 멤버 썸네일 — 외부 이미지 URL(https). data:/업로드는 네이버가 지워서 미지원.
+    const thumb = el('span', { style: 'width:30px;height:30px;border-radius:6px;flex-shrink:0;border:1px solid var(--hair);background:#F0ECE4 center/cover no-repeat' + (m.img ? `;background-image:url("${m.img}")` : '') });
+    const imgIn = el('input', { value: m.img || '', class: 'mono', style: inp + ';flex:1;min-width:0;font-size:12px', placeholder: '썸네일 이미지 URL (https://… .png/.jpg) — 비워도 됨',
+      oninput: ev => { m.img = ev.target.value.trim(); thumb.style.backgroundImage = m.img ? `url("${m.img}")` : 'none'; refreshPreview(); } });
+    list.append(el('div', { style: 'display:flex;flex-direction:column;gap:7px;padding:9px 11px;background:#fff;border:1px solid var(--hair);border-radius:11px' }, [
+      el('div', { style: 'display:flex;align-items:center;gap:8px' }, [
+        preview,
+        el('span', { style: 'width:48px;font-size:13.5px;font-weight:700;flex-shrink:0' }, m.name),
+        el('span', { style: 'font-size:11px;color:var(--sub)' }, '배경'), bgIn,
+        el('span', { style: 'font-size:11px;color:var(--sub)' }, '글자'), fgIn,
+        urlIn,
+      ]),
+      el('div', { style: 'display:flex;align-items:center;gap:8px' }, [
+        thumb,
+        el('span', { style: 'font-size:11px;color:var(--sub);width:46px;flex-shrink:0' }, '이미지'),
+        imgIn,
+      ]),
     ]));
   }
   wrap.append(list);
-  wrap.append(note('설정은 이 브라우저에 저장돼요(새로고침해도 유지). data: 이미지는 네이버가 지우므로 썸네일은 외부 URL만 지원해요.'));
+  wrap.append(note('설정은 이 브라우저에 저장돼요(새로고침해도 유지). 썸네일은 네이버가 보존하는 외부 이미지 URL만 지원해요(업로드·data: 이미지는 붙여넣으면 사라짐). 깃허브/이미지호스트에 올린 https 주소를 넣으세요.'));
   return wrap;
 }
 function toHex(c) {
@@ -346,6 +361,7 @@ function designPanel() {
   const rows = [
     ['헤더 텍스트', el('input', { value: S.theme.header, style: inp + ';flex:1', placeholder: '비우면 제목 없음', oninput: e => { S.theme.header = e.target.value; refreshPreview(); } })],
     ['서브 배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 배지 없음', oninput: e => { S.theme.subtitle = e.target.value; refreshPreview(); } })],
+    ['로고 URL', el('input', { value: S.theme.logo || '', class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: '헤더 로고 이미지 URL (https://… ) — 외부 주소만', oninput: e => { S.theme.logo = e.target.value.trim(); refreshPreview(); } })],
     ['글자 크기', seg(S.theme.fontSize, ['작게', '보통', '크게'].map(v => ({ v, label: v })), v => set('fontSize', v))],
     ['글자 배율', fontScaleSlider()],
     ['카드 높이', cardHeightSlider()],
@@ -355,7 +371,7 @@ function designPanel() {
     ['겹칠 때', seg(S.theme.collision, [{ v: '좌우', label: '좌·우' }, { v: '위아래', label: '위·아래' }], v => set('collision', v))],
     ['정렬', seg(S.theme.align, ['왼쪽', '가운데'].map(v => ({ v, label: v })), v => set('align', v))],
     ['줄바꿈', seg(S.theme.wrap, [{ v: '자동', label: '자동' }, { v: '말줄임', label: '한 줄(…)' }], v => set('wrap', v))],
-    ['모서리', seg(S.theme.radius, [{ v: 8, label: '각지게' }, { v: 16, label: '기본' }, { v: 24, label: '둥글게' }], v => set('radius', v))],
+    ['모서리', seg(S.theme.radius, [{ v: 0, label: '직각' }, { v: 8, label: '약간' }, { v: 16, label: '둥글게' }, { v: 24, label: '많이' }], v => set('radius', v))],
     ['시간 표기', seg(S.theme.timeFmt, ['AM/PM', '24시'].map(v => ({ v, label: v })), v => set('timeFmt', v))],
     ['폰트', seg(S.theme.font, ['Pretendard', '나눔고딕', '검은고딕'].map(v => ({ v, label: v })), v => set('font', v))],
   ];
