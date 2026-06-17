@@ -11,11 +11,23 @@
 src/generate.mjs   핵심. 순수 함수 (의존성 0, import 0). (members, schedule, dates, theme) → HTML 문자열.
                    Node에서도 브라우저에서도 그대로 쓴다. 네이버 생존 여부는 SURVIVE 플래그로 제어.
 src/csv.mjs        작은 CSV 파서/직렬화 (의존성 0).
+src/ui.js          바닐라 UI (React·Babel·CDN 없음). 빌드시 카페대문.html로 인라인.
+build.mjs          node build.mjs → src/* 를 단일 파일 카페대문.html 로 인라인(더블클릭·오프라인 동작).
+카페대문.html       ★ 빌드 산출물. 더블클릭으로 열어 편집→복사. (build.mjs가 생성)
 cli.mjs            node cli.mjs → data/*.csv 읽어 out.html 생성 + (mac) 클립보드 복사.
-spike.html         ★ Phase 0 게이트. 네이버 대문에 붙여넣어 "무엇이 살아남는지" 실측하는 프로브.
+spike.html         Phase 0 게이트 프로브 (완료, 재확인용).
+spike2.html        2차 프로브 (완료).
 data/members.csv   멤버 색·기본 URL. 거의 안 바뀜.
-data/schedule.csv  이번 주 스케줄. 매주 이것만 고친다.
+data/schedule.csv  이번 주 스케줄 시드.
 ```
+
+## 쓰는 법 (둘 중 하나)
+
+**A. 브라우저 UI (권장)** — `카페대문.html` 더블클릭 → 스케줄/멤버/디자인 편집 → **HTML 복사** →
+대문 HTML 편집에 붙여넣기. 편집 내용은 브라우저에 자동 저장. CSV 가져오기/내보내기 지원.
+UI를 고쳤으면 `node build.mjs`로 다시 빌드.
+
+**B. CLI** — `data/schedule.csv` 고치고 `node cli.mjs` → `out.html` + 클립보드 복사.
 
 ## Phase 0 스파이크 — 완료 (2026-06-17, 실측)
 
@@ -57,7 +69,9 @@ data/schedule.csv  이번 주 스케줄. 매주 이것만 고친다.
 | `boxShadow` | 그림자 (네이버가 거른다고 알려짐) | **off** |
 | `inlineImg` | data:/외부 `<img>` 썸네일 (거의 제거됨) | **off** |
 
-## 옛 버전
+## 재작성 노트
 
-`카페대문-컨트롤패널.html` = 이전 단일파일 React 프로토타입. 스파이크 결과 반영해
-얇은 무의존 UI로 재작성 예정(stage 2). 그때까지 참고용으로만 둔다.
+`카페대문-컨트롤패널.html`(옛 React 프로토타입)은 제거됨. 문제였던 점:
+브라우저 내 Babel + CDN 3종 의존(오프라인/CDN장애 시 死), 카드 전체를 `<a>`로 감싸
+**네이버에서 통째로 사라질** 구조, data: 이미지(붙여넣으면 깨짐), 깨진 `…` 기본 URL,
+죽은 버튼(PNG·이미지맵 스텁). 전부 걷어내고 스파이크로 검증된 마크업만 쓰는 무의존 UI로 재작성.
