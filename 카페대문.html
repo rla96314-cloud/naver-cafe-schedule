@@ -407,7 +407,12 @@ function parseWeekGrid(grid, members) {
   for (let i = hi + 1; i < grid.length;) {
     const name = (grid[i][mcol] || '').trim();
     if (name2id[name]) {
-      const tr = grid[i + 1] || [];
+      // 시간행은 grid[i], 제목행은 보통 grid[i+1]. 단, 시간만 적고 프로그램(제목)을
+      // 안 적으면 그 멤버의 제목행이 시트에 아예 없다 → 다음 행이 바로 또 다른 멤버.
+      // 이때 아래 멤버의 시간행을 제목으로 잘못 끌어오지 않게 제목을 빈칸 처리하고 1행만 전진.
+      const next = grid[i + 1] || [];
+      const nextIsMember = !!name2id[(next[mcol] || '').trim()];
+      const tr = nextIsMember ? [] : next;
       for (let di = 0; di < 7; di++) {
         const ci = dstart + di;
         const t = (grid[i][ci] || '').trim();
@@ -415,7 +420,7 @@ function parseWeekGrid(grid, members) {
         if (OFFSET.has(t) || title === '휴방') continue;
         entries.push({ id: 's' + id++, day: DAYK[di], time: normTime(t), mem: name2id[name], title: title.replace(/\s*\n\s*/g, ' ').trim(), url: '' });
       }
-      i += 2;
+      i += nextIsMember ? 1 : 2;
     } else i++;
   }
   const m = label.match(/(\d{2})(\d{2})/);
