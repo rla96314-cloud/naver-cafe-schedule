@@ -16,18 +16,20 @@
    - true  = 네이버 스마트에디터가 보존함(붙여넣기 후 새로고침에서 확인).
    - false = 제거됨 → 생성기가 아예 안 내보냄(미리보기=결과 보장).
 
-   ★ 1차 핵심 발견:
-   - <a>를 "블록 컬러 카드"로 통째 감싸면 네이버가 제거(⑦ FAIL).
-     → 카드는 <div>로, 클릭 링크는 카드 안의 텍스트를 감싼 inline <a>로 한다(①·linkText PASS).
-   - data: base64 이미지는 제거(⑥ FAIL). 외부 호스팅 <img src=https>는 보존(⑤ PASS).
-     → 멤버 이미지는 외부 URL만 허용. data:는 코드가 거부. */
+   ★ 확정된 생존 규칙(1차 + 2차 실측):
+   - <a>에 background / display:block / display:inline-block 를 주면 네이버가 그 요소를
+     통째로 삭제한다(1차 ⑦, 2차 A·B·C 전부 사라짐). → "카드 전체 클릭" 불가능.
+   - <a>에 color / text-decoration 만 있으면 생존(1차 ①, 2차 D·E). 밑줄도 보존됨(E).
+     → 카드는 <div>(배경/모서리/그림자), 클릭 링크는 카드 안 텍스트를 감싼 "수수한" inline <a>.
+   - data: base64 이미지는 제거(1차 ⑥). 외부 <img src=https>는 보존(1차 ⑤).
+     → 멤버 이미지는 외부 URL만. data:는 코드가 거부. */
 export const DEFAULT_SURVIVE = {
-  linkText:     true,   // 텍스트를 감싼 inline <a href> 링크 (①)
+  linkText:     true,   // color/text-decoration만 가진 inline <a> (①·D·E)
   bgColor:      true,   // 셀/카드 배경색 (②)
   borderRadius: true,   // 둥근 모서리 (③)
-  boxShadow:    true,   // 그림자 — div 카드에서 보존됨 (④)
-  inlineImg:    true,   // 외부 URL <img>만. data:는 항상 거부 (⑤ PASS / ⑥ FAIL)
-  // linkBlock(<a>를 블록 카드로): FAIL(⑦) — 지원 안 함. 2차 스파이크로 부활 가능성만 탐색.
+  boxShadow:    true,   // 그림자 — div 카드에서 보존 (④)
+  inlineImg:    true,   // 외부 URL <img>만. data:는 거부 (⑤ / ⑥ FAIL)
+  // 카드 전체 클릭(<a>에 bg·display): 불가능으로 확정(⑦·A·B·C 전부 삭제됨).
 };
 
 export const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
@@ -99,7 +101,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'',
+    header:'', subtitle:'', logo:'', linkUnderline:true,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -162,8 +164,11 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       ? `<br><span style="font-size:${SZ.title}px;color:${m.fg}">${escapeHtml(c.title)}</span>`
       : '';
     const textInner = nameHtml + titleHtml;
+    // 카드 위 inline 링크는 모바일에서 hover가 없어 "누를 수 있음"이 안 보인다.
+    // 밑줄(2차 E에서 보존 확인)로 클릭 가능 신호를 준다 — linkUnderline로 끌 수 있음.
+    const deco = t.linkUnderline ? 'underline' : 'none';
     const linkedText = linkable
-      ? `<a href="${href(url)}" class="schd-link" style="text-decoration:none;color:${m.fg};word-break:keep-all">${textInner}</a>`
+      ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg};word-break:keep-all">${textInner}</a>`
       : textInner;
 
     let body;
