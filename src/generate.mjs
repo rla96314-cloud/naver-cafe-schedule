@@ -12,16 +12,22 @@
    - 같은 시간대 2명 충돌 시 좌·우(narrow) 또는 위·아래 배치.
    ───────────────────────────────────────────────────────────────────────── */
 
-/* 스파이크로 확정할 "네이버 생존 여부" 플래그.
-   - true  = 네이버가 보존한다고 확인됨(또는 보존한다고 가정해도 안전).
-   - false = 네이버가 제거함 → 생성기가 아예 안 내보냄(미리보기=결과 보장).
-   spike.html 붙여넣기 결과로 이 값만 고치면 전체 출력이 그에 맞게 degrade 된다. */
+/* "네이버 생존 여부" 플래그 — spike.html 1차 실측(2026-06-17)으로 확정.
+   - true  = 네이버 스마트에디터가 보존함(붙여넣기 후 새로고침에서 확인).
+   - false = 제거됨 → 생성기가 아예 안 내보냄(미리보기=결과 보장).
+
+   ★ 1차 핵심 발견:
+   - <a>를 "블록 컬러 카드"로 통째 감싸면 네이버가 제거(⑦ FAIL).
+     → 카드는 <div>로, 클릭 링크는 카드 안의 텍스트를 감싼 inline <a>로 한다(①·linkText PASS).
+   - data: base64 이미지는 제거(⑥ FAIL). 외부 호스팅 <img src=https>는 보존(⑤ PASS).
+     → 멤버 이미지는 외부 URL만 허용. data:는 코드가 거부. */
 export const DEFAULT_SURVIVE = {
-  linkAnchor:   true,   // <a href> 클릭 링크
-  bgColor:      true,   // 셀/카드 배경색 (inline background)
-  borderRadius: true,   // 카드 둥근 모서리
-  boxShadow:    false,  // 그림자 — 네이버가 거른다고 알려짐. 스파이크로 확인 전 OFF.
-  inlineImg:    false,  // data:/외부 <img> 썸네일 — 거의 확실히 제거됨. 확인 전 OFF.
+  linkText:     true,   // 텍스트를 감싼 inline <a href> 링크 (①)
+  bgColor:      true,   // 셀/카드 배경색 (②)
+  borderRadius: true,   // 둥근 모서리 (③)
+  boxShadow:    true,   // 그림자 — div 카드에서 보존됨 (④)
+  inlineImg:    true,   // 외부 URL <img>만. data:는 항상 거부 (⑤ PASS / ⑥ FAIL)
+  // linkBlock(<a>를 블록 카드로): FAIL(⑦) — 지원 안 함. 2차 스파이크로 부활 가능성만 탐색.
 };
 
 export const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
@@ -132,55 +138,57 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       `${escapeHtml(dates[day] || '')}</div></td>\n`;
   }
 
-  /* 카드 1장 */
+  /* 카드 1장.
+     스파이크 1차: 카드는 <div>(배경/모서리/그림자 보존). 클릭 링크는 카드 안의
+     이름+제목 텍스트를 감싼 inline <a>(블록 <a> 카드는 네이버가 제거하므로). */
   const card = (c, narrow) => {
     const m = M[c.mem];
     if (!m) return '';
     const cardBg = S.bgColor ? m.bg : '#FFFFFF';
-    const linkable = S.linkAnchor && isUsableUrl(c.url || m.url);
+    const linkable = S.linkText && isUsableUrl(c.url || m.url);
     const url = c.url || m.url;
-    const img = S.inlineImg ? m.img : null;
+    // data: 이미지는 네이버가 제거(⑥) → 외부 http(s) URL만 허용.
+    const img = (S.inlineImg && m.img && /^https?:\/\//i.test(m.img)) ? m.img : null;
 
     const pill =
       `<span style="display:inline-block;background:${pillBg};color:#2A2724;` +
       (radius ? `border-radius:9px;` : '') +
       `padding:2px 8px;font-size:${SZ.pill}px;font-weight:800;white-space:nowrap">` +
       `${escapeHtml(formatTime(c.time, t.timeFmt))}</span>`;
-    const name = `<b style="font-size:${SZ.name}px;color:${m.fg}">${escapeHtml(m.name)}</b>`;
-    const title = c.title
-      ? `<div style="font-size:${SZ.title}px;color:${m.fg};margin-top:5px;text-align:${align};${titleWrap}">${escapeHtml(c.title)}</div>`
+
+    // 이름 + 제목 텍스트 묶음을 하나의 inline <a>로 감싼다(<br>로 줄바꿈 — 블록 자식 없음).
+    const nameHtml = `<b style="font-size:${SZ.name}px;color:${m.fg}">${escapeHtml(m.name)}</b>`;
+    const titleHtml = c.title
+      ? `<br><span style="font-size:${SZ.title}px;color:${m.fg}">${escapeHtml(c.title)}</span>`
       : '';
+    const textInner = nameHtml + titleHtml;
+    const linkedText = linkable
+      ? `<a href="${href(url)}" class="schd-link" style="text-decoration:none;color:${m.fg};word-break:keep-all">${textInner}</a>`
+      : textInner;
 
     let body;
     if (narrow) {
-      body = name + title + `<div style="margin-top:7px;text-align:${align}">${pill}</div>`;
-    } else if (img) {
-      const ts = SZ.thumb;
-      body =
-        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
-        `<td style="padding:0;vertical-align:top">${name}${title}</td>` +
-        `<td style="padding:0 0 0 6px;vertical-align:top;text-align:right;width:${ts}px">` +
-        `${pill}<br><img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;` +
-        `object-fit:cover;${radius ? `border-radius:9px;` : ''}display:inline-block;margin-top:6px"></td>` +
-        `</tr></table>`;
+      body = `<div style="text-align:${align}">${linkedText}</div>` +
+             `<div style="margin-top:7px;text-align:${align}">${pill}</div>`;
     } else {
+      const ts = SZ.thumb;
+      const right = img
+        ? `${pill}<br><img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;object-fit:cover;${radius ? 'border-radius:9px;' : ''}display:inline-block;margin-top:6px">`
+        : pill;
       body =
         `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
-        `<td style="padding:0;text-align:left;vertical-align:middle">${name}</td>` +
-        `<td style="padding:0 0 0 4px;text-align:right;vertical-align:middle;width:1%">${pill}</td>` +
-        `</tr></table>${title}`;
+        `<td style="padding:0;text-align:${align};vertical-align:top;word-break:keep-all">${linkedText}</td>` +
+        `<td style="padding:0 0 0 6px;text-align:right;vertical-align:top;width:${img ? ts : 1}${img ? 'px' : '%'}">${right}</td>` +
+        `</tr></table>`;
     }
 
     const style =
       `background:${cardBg};` +
       (radius ? `border-radius:${radius}px;` : '') +
       `padding:10px 12px;${shadow}box-sizing:border-box;word-break:keep-all;` +
-      (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`) +
-      (linkable ? `text-decoration:none;` : '');
+      (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 
-    return linkable
-      ? `<a href="${href(url)}" class="schd-card" style="${style}">${body}</a>`
-      : `<div class="schd-card" style="${style}">${body}</div>`;
+    return `<div class="schd-card" style="${style}">${body}</div>`;
   };
 
   /* 시간 행 */
@@ -208,7 +216,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   let topHeader = '';
   if (t.header || t.subtitle) {
     const emS = SZ.big + 14;
-    const emblem = (S.inlineImg && t.logo)
+    const emblem = (S.inlineImg && t.logo && /^https?:\/\//i.test(t.logo))
       ? `<img src="${escapeAttr(t.logo)}" alt="" style="width:${emS}px;height:${emS}px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:10px">`
       : '';
     const titleTxt = t.header
