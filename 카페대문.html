@@ -255,12 +255,12 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
       body = `<div style="text-align:${align}">${link(nameHtml + (c.title ? `<br>${titleSpan}` : ''))}</div>` +
              `<div style="margin-top:7px;text-align:${align}">${pill}</div>`;
     } else if (pillInline) {
-      // 이름 + 시간을 한 줄 헤더로 고정(왼쪽 이름 / 오른쪽 알약), 제목은 그 아래.
+      // 이름 + 시간을 한 줄 헤더로. 단 좁은 7열에서 긴 이름+알약이 칸을 넘지 않게,
+      // 고정폭 테이블(far-right) 대신 inline 흐름으로 둔다 → 자리 없으면 알약이 아랫줄로
+      // 내려갈 뿐 카드 밖으로 삐져나오지 않는다. 이름은 nowrap이라 온전히 유지.
       body =
-        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
-        `<td style="padding:0;text-align:left;vertical-align:middle">${link(nameHtml)}</td>` +
-        `<td style="padding:0 0 0 6px;text-align:right;vertical-align:middle;width:1%;white-space:nowrap">${pill}</td>` +
-        `</tr></table>${titleBlock}` +
+        `<div style="text-align:${align};line-height:1.45">${link(nameHtml)} ` +
+        `<span style="display:inline-block;vertical-align:middle">${pill}</span></div>${titleBlock}` +
         (imgTag ? `<div style="text-align:right;margin-top:6px">${imgTag}</div>` : '');
     } else {
       // 기본: 시간 알약 윗줄 오른쪽, 이름+제목이 칸 전체 폭.
