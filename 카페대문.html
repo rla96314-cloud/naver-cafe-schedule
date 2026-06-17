@@ -173,7 +173,7 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:0,
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:0, pillPos:'윗줄',
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -235,33 +235,37 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
       `padding:2px 8px;font-size:${SZ.pill}px;font-weight:800;white-space:nowrap">` +
       `${escapeHtml(formatTime(c.time, t.timeFmt))}</span>`;
 
-    // 이름 + 제목 텍스트 묶음을 하나의 inline <a>로 감싼다(<br>로 줄바꿈 — 블록 자식 없음).
     // 이름은 nowrap — 좁은 칸에서도 "여우연"이 글자별로 세로로 쪼개지지 않게(알약처럼 네이버 보존).
     const nameHtml = `<b style="font-size:${SZ.name}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
-    const titleHtml = c.title
-      ? `<br><span style="font-size:${SZ.title}px;color:${m.fg}">${escapeHtml(c.title)}</span>`
-      : '';
-    const textInner = nameHtml + titleHtml;
+    const titleSpan = c.title ? `<span style="font-size:${SZ.title}px;color:${m.fg}">${escapeHtml(c.title)}</span>` : '';
     // 카드 위 inline 링크는 모바일에서 hover가 없어 "누를 수 있음"이 안 보인다.
     // 밑줄(2차 E에서 보존 확인)로 클릭 가능 신호를 준다 — linkUnderline로 끌 수 있음.
     const deco = t.linkUnderline ? 'underline' : 'none';
-    const linkedText = linkable
-      ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg};word-break:keep-all">${textInner}</a>`
-      : textInner;
+    const link = inner => linkable
+      ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg};word-break:keep-all">${inner}</a>`
+      : inner;
+    const titleBlock = c.title ? `<div style="margin-top:5px;text-align:${align};word-break:keep-all">${link(titleSpan)}</div>` : '';
 
-    // 시간 알약(+썸네일)은 윗줄 오른쪽에 따로 둔다 → 이름/제목이 칸 전체 폭을 쓴다
-    // (좁은 7열 격자에서 이름이 알약과 폭을 나눠 쓰다 글자별로 깨지는 걸 막음).
     const ts = SZ.thumb;
-    const topRight =
-      `<div style="text-align:right;line-height:1">${pill}` +
-      (img ? `<br><img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;object-fit:cover;${radius ? 'border-radius:9px;' : ''}display:inline-block;margin-top:6px">` : '') +
-      `</div>`;
+    const imgTag = img ? `<img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;object-fit:cover;${radius ? 'border-radius:9px;' : ''}display:inline-block">` : '';
+    const pillInline = t.pillPos === '옆'; // 이름+시간 한 줄(고정 헤더) vs 시간 윗줄(기본)
     let body;
     if (narrow) {
-      body = `<div style="text-align:${align}">${linkedText}</div>` +
+      // 좌우 충돌: 세로 스택(이름/제목/알약) 유지
+      body = `<div style="text-align:${align}">${link(nameHtml + (c.title ? `<br>${titleSpan}` : ''))}</div>` +
              `<div style="margin-top:7px;text-align:${align}">${pill}</div>`;
+    } else if (pillInline) {
+      // 이름 + 시간을 한 줄 헤더로 고정(왼쪽 이름 / 오른쪽 알약), 제목은 그 아래.
+      body =
+        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
+        `<td style="padding:0;text-align:left;vertical-align:middle">${link(nameHtml)}</td>` +
+        `<td style="padding:0 0 0 6px;text-align:right;vertical-align:middle;width:1%;white-space:nowrap">${pill}</td>` +
+        `</tr></table>${titleBlock}` +
+        (imgTag ? `<div style="text-align:right;margin-top:6px">${imgTag}</div>` : '');
     } else {
-      body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${linkedText}</div>`;
+      // 기본: 시간 알약 윗줄 오른쪽, 이름+제목이 칸 전체 폭.
+      const topRight = `<div style="text-align:right;line-height:1">${pill}${imgTag ? `<br><span style="display:inline-block;margin-top:6px">${imgTag}</span>` : ''}</div>`;
+      body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${link(nameHtml)}</div>${titleBlock}`;
     }
 
     // 카드 높이 고정(>0)이면 모든 카드가 같은 높이 → 균일 격자. 넘치는 내용은 잘림(overflow:hidden).
@@ -514,7 +518,7 @@ function defaultState() {
     sheetTabs: DEFAULT_SHEET_TABS.map(t => ({ ...t })),
     theme: {
       header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, cardHeight: 0, bg: '흰색',
-      linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽',
+      linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽', pillPos: '옆',
       wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
     },
     section: 'schedule', selId: null,
@@ -795,6 +799,7 @@ function designPanel() {
     ['글자 크기', seg(S.theme.fontSize, ['작게', '보통', '크게'].map(v => ({ v, label: v })), v => set('fontSize', v))],
     ['글자 배율', fontScaleSlider()],
     ['카드 높이', cardHeightSlider()],
+    ['시간 위치', seg(S.theme.pillPos, [{ v: '옆', label: '이름 옆(한 줄)' }, { v: '윗줄', label: '윗줄' }], v => set('pillPos', v))],
     ['배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => set('bg', v))],
     ['링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '밑줄로 표시' }, { v: false, label: '없음' }], v => set('linkUnderline', v))],
     ['겹칠 때', seg(S.theme.collision, [{ v: '좌우', label: '좌·우' }, { v: '위아래', label: '위·아래' }], v => set('collision', v))],

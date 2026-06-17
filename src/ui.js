@@ -39,7 +39,7 @@ function defaultState() {
     sheetTabs: DEFAULT_SHEET_TABS.map(t => ({ ...t })),
     theme: {
       header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, cardHeight: 0, bg: '흰색',
-      linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽',
+      linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽', pillPos: '옆',
       wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
     },
     section: 'schedule', selId: null,
@@ -320,6 +320,7 @@ function designPanel() {
     ['글자 크기', seg(S.theme.fontSize, ['작게', '보통', '크게'].map(v => ({ v, label: v })), v => set('fontSize', v))],
     ['글자 배율', fontScaleSlider()],
     ['카드 높이', cardHeightSlider()],
+    ['시간 위치', seg(S.theme.pillPos, [{ v: '옆', label: '이름 옆(한 줄)' }, { v: '윗줄', label: '윗줄' }], v => set('pillPos', v))],
     ['배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => set('bg', v))],
     ['링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '밑줄로 표시' }, { v: false, label: '없음' }], v => set('linkUnderline', v))],
     ['겹칠 때', seg(S.theme.collision, [{ v: '좌우', label: '좌·우' }, { v: '위아래', label: '위·아래' }], v => set('collision', v))],
