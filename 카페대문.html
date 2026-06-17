@@ -531,6 +531,8 @@ function load() {
     if (raw && raw.members) {
       const base = defaultState();
       const m = { ...base, ...raw, section: 'schedule', selId: null };
+      // theme는 깊게 병합 — 새로 추가된 테마 키(pillPos 등)의 기본값이 옛 저장본에도 들어가게.
+      m.theme = { ...base.theme, ...(raw.theme || {}) };
       // 옛 단일주 저장본 마이그레이션
       if (!Array.isArray(m.weeks) || !m.weeks.length) {
         m.weeks = raw.schedule ? [{ label: (raw.weekStart || '주') + ' 주', weekStart: raw.weekStart || '', schedule: raw.schedule, gid: null }] : base.weeks;
