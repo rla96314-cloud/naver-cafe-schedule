@@ -101,7 +101,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:0, pillPos:'윗줄',
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:0, pillPos:'옆',
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -113,6 +113,9 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const sc = Math.max(0.6, Math.min(1.6, +t.fontScale || 1));
   const SZ = {};
   for (const k in base) SZ[k] = k === 'thumb' ? base[k] : Math.round(base[k] * sc * 10) / 10;
+  // 카드는 항상 고정 높이(균일 격자). cardHeight>0이면 사용자 지정, 아니면 글자 크기에서 계산.
+  // 내용이 넘치면 카드를 키우는 게 아니라 fitCards(앱)가 글자를 줄인다.
+  const cardH = (+t.cardHeight > 0) ? +t.cardHeight : Math.round(SZ.name * 1.35 + SZ.title * 2 * 1.4 + 22);
   const fontStack = FONT[t.font] || FONT.Pretendard;
   const bg = BG[t.bg] || BG.흰색;
   const dark = bg.dark;
@@ -158,54 +161,56 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const img = (S.inlineImg && m.img && /^https?:\/\//i.test(m.img)) ? m.img : null;
 
     const timeTxt = escapeHtml(formatTime(c.time, t.timeFmt));
-    const mkPill = (fs, pad, rad) =>
+    // 카드 안 글자는 모두 em(카드 기준 font-size 대비). fitCards(앱)가 카드 font-size 하나만
+    // 줄이면 이름·제목·알약이 함께 작아진다 → "넘치면 카드가 커지는 게 아니라 글자가 작아짐".
+    const cardBase = SZ.name;
+    const em = px => (px / cardBase).toFixed(3) + 'em';
+    const mkPill = (relPx, pad, rad) =>
       `<span style="display:inline-block;background:${pillBg};color:#2A2724;` +
       (rad ? `border-radius:${rad}px;` : '') +
-      `padding:${pad};font-size:${fs}px;font-weight:800;white-space:nowrap">${timeTxt}</span>`;
-    const pill = mkPill(SZ.pill, '2px 8px', radius ? 9 : 0);
-    // 좁은 7열에서 이름 옆에 나란히 두려고 더 작은 알약(3글자 이름도 한 줄에 들어오게)
-    const pillSm = mkPill(Math.max(8.5, SZ.pill - 2), '1px 5px', radius ? 7 : 0);
+      `padding:${pad};font-size:${em(relPx)};font-weight:800;white-space:nowrap">${timeTxt}</span>`;
+    const pill = mkPill(SZ.pill, '2px 7px', radius ? 9 : 0);
+    const pillSm = mkPill(Math.max(8.5, SZ.pill - 1.5), '1px 5px', radius ? 7 : 0);
 
-    // 이름은 nowrap — 좁은 칸에서도 "여우연"이 글자별로 세로로 쪼개지지 않게(알약처럼 네이버 보존).
-    const nameHtml = `<b style="font-size:${SZ.name}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
-    const titleSpan = c.title ? `<span style="font-size:${SZ.title}px;color:${m.fg}">${escapeHtml(c.title)}</span>` : '';
-    // 카드 위 inline 링크는 모바일에서 hover가 없어 "누를 수 있음"이 안 보인다.
-    // 밑줄(2차 E에서 보존 확인)로 클릭 가능 신호를 준다 — linkUnderline로 끌 수 있음.
+    // 이름은 nowrap — 좁은 칸에서도 "여우연"이 글자별로 세로로 쪼개지지 않게.
+    const nameHtml = `<b style="font-size:1em;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
+    const titleSpan = c.title ? `<span style="font-size:${em(SZ.title)};color:${m.fg}">${escapeHtml(c.title)}</span>` : '';
+    // 카드 위 inline 링크는 모바일에서 hover가 없어 밑줄(2차 E 보존)로 클릭 가능 신호.
     const deco = t.linkUnderline ? 'underline' : 'none';
     const link = inner => linkable
       ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg};word-break:keep-all">${inner}</a>`
       : inner;
-    const titleBlock = c.title ? `<div style="margin-top:5px;text-align:${align};word-break:keep-all">${link(titleSpan)}</div>` : '';
+    const titleBlock = c.title ? `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${link(titleSpan)}</div>` : '';
 
     const ts = SZ.thumb;
     const imgTag = img ? `<img src="${escapeAttr(img)}" alt="" style="width:${ts}px;height:${ts}px;object-fit:cover;${radius ? 'border-radius:9px;' : ''}display:inline-block">` : '';
-    const pillInline = t.pillPos === '옆'; // 이름+시간 한 줄(고정 헤더) vs 시간 윗줄(기본)
+    const pillInline = t.pillPos !== '윗줄'; // 기본: 이름 좌상단 / 시간 우상단 코너
     let body;
     if (narrow) {
-      // 좌우 충돌: 세로 스택(이름/제목/알약) 유지
+      // 좌우 충돌: 세로 스택(이름/제목/알약)
       body = `<div style="text-align:${align}">${link(nameHtml + (c.title ? `<br>${titleSpan}` : ''))}</div>` +
-             `<div style="margin-top:7px;text-align:${align}">${pill}</div>`;
+             `<div style="margin-top:6px;text-align:${align}">${pillSm}</div>`;
     } else if (pillInline) {
-      // 이름 + 시간을 한 줄 헤더로. 단 좁은 7열에서 긴 이름+알약이 칸을 넘지 않게,
-      // 고정폭 테이블(far-right) 대신 inline 흐름으로 둔다 → 자리 없으면 알약이 아랫줄로
-      // 내려갈 뿐 카드 밖으로 삐져나오지 않는다. 이름은 nowrap이라 온전히 유지.
+      // 이름 좌상단(왼쪽 끝) / 시간 우상단(오른쪽 끝). vertical-align:top = 위 끝 정렬.
+      // 좁아서 넘치면 fitCards가 글자를 줄여 한 줄을 유지.
       body =
-        `<div style="text-align:${align};line-height:1.5">${link(nameHtml)} ` +
-        `<span style="display:inline-block;vertical-align:middle">${pillSm}</span></div>${titleBlock}` +
+        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
+        `<td style="padding:0;text-align:left;vertical-align:top">${link(nameHtml)}</td>` +
+        `<td style="padding:0 0 0 4px;text-align:right;vertical-align:top;width:1%;white-space:nowrap">${pillSm}</td>` +
+        `</tr></table>${titleBlock}` +
         (imgTag ? `<div style="text-align:right;margin-top:6px">${imgTag}</div>` : '');
     } else {
-      // 기본: 시간 알약 윗줄 오른쪽, 이름+제목이 칸 전체 폭.
+      // 시간 알약 윗줄 오른쪽, 이름+제목 전체 폭.
       const topRight = `<div style="text-align:right;line-height:1">${pill}${imgTag ? `<br><span style="display:inline-block;margin-top:6px">${imgTag}</span>` : ''}</div>`;
       body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${link(nameHtml)}</div>${titleBlock}`;
     }
 
-    // 카드 높이 고정(>0)이면 모든 카드가 같은 높이 → 균일 격자. 넘치는 내용은 잘림(overflow:hidden).
-    const ch = Math.max(0, +t.cardHeight || 0);
+    // 카드는 항상 고정 높이 → 균일 격자(내용 없어도 유지). 넘치면 fitCards가 글자 축소, 그래도 넘으면 잘림.
     const style =
-      `background:${cardBg};` +
+      `background:${cardBg};font-size:${cardBase}px;` +
       (radius ? `border-radius:${radius}px;` : '') +
-      `padding:10px 9px;${shadow}box-sizing:border-box;word-break:keep-all;` +
-      (ch ? `height:${ch}px;overflow:hidden;` : '') +
+      `padding:9px;${shadow}box-sizing:border-box;word-break:keep-all;` +
+      `height:${cardH}px;overflow:hidden;` +
       (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 
     return `<div class="schd-card" style="${style}">${body}</div>`;

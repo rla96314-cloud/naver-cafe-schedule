@@ -122,11 +122,38 @@ function seg(value, options, onChange) {
   return wrap;
 }
 
+/* 카드 자동 맞춤 — 각 카드의 내용이 고정 높이/폭을 넘으면 카드를 키우지 않고 글자(em)를 줄인다.
+   카드 font-size(px) 하나만 줄이면 이름·제목·알약이 함께 작아진다(생성기에서 em으로 짜둠).
+   정적 HTML이라 네이버에선 못 돌리므로, 미리보기와 '복사' 시점에 측정해 px로 구워넣는다. */
+function fitCards(root) {
+  if (!root) return;
+  root.querySelectorAll('.schd-card').forEach(card => {
+    const base = parseFloat(card.style.fontSize) || 14;
+    const min = base * 0.6;
+    let fs = base, guard = 0;
+    card.style.fontSize = fs + 'px';
+    while ((card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1) && fs > min && guard++ < 80) {
+      fs = Math.round((fs - 0.5) * 10) / 10;
+      card.style.fontSize = fs + 'px';
+    }
+  });
+}
+/* 복사용: 740px 오프스크린에 그려 fitCards로 글자 축소를 px로 굳힌 HTML 반환. */
+function fittedHTML() {
+  const host = el('div', { style: 'position:fixed;left:-10000px;top:0;width:740px' });
+  host.innerHTML = genHTML();
+  document.body.append(host);
+  fitCards(host);
+  const out = host.firstElementChild ? host.firstElementChild.outerHTML : host.innerHTML;
+  host.remove();
+  return out;
+}
+
 /* ── 미리보기 갱신(타이핑 중 패널 재구성 없이) ── */
 function refreshPreview() {
   const html = genHTML();
   const host = $('#pv-render');
-  if (host) host.innerHTML = html;
+  if (host) { host.innerHTML = html; fitCards(host); }
   const code = $('#pv-code');
   if (code) {
     const lines = html.split('\n');
@@ -406,7 +433,7 @@ function note(text) {
 
 /* ── 액션 ── */
 function onCopy() {
-  const html = genHTML();
+  const html = fittedHTML();
   const done = () => { const b = $('#copyBtn'); if (b) { b.textContent = '복사됨 ✓'; b.style.background = '#2E7D5B'; setTimeout(() => { b.textContent = 'HTML 복사'; b.style.background = C.accent; }, 1500); } };
   if (navigator.clipboard) navigator.clipboard.writeText(html).then(done).catch(() => { fallbackCopy(html); done(); });
   else { fallbackCopy(html); done(); }
@@ -497,6 +524,7 @@ function render() {
     ]),
   ]);
   app.append(win);
+  fitCards($('#pv-render')); // 미리보기 카드 글자 맞춤(DOM 삽입 후)
   save();
 }
 render();
