@@ -6,6 +6,17 @@
    멤버 이름→id 매핑도 하드코딩 대신 현재 members에서 만든다. */
 
 export const DEFAULT_SHEET_ID = '1BsAtW0sfSRjyJOQAe3mgVzYuRLa6rUasWOfPca1kEQw';
+/* 알려진 주차 탭(gid). 새 주가 생기면 UI에서 URL 붙여 추가(append)한다. */
+export const DEFAULT_SHEET_TABS = [
+  { gid: '1915098412', label: '03.30–04.05' },
+  { gid: '101804373',  label: '04.06–04.12' },
+  { gid: '157305670',  label: '05.04–05.10' },
+  { gid: '1732047555', label: '06.01–06.07' },
+  { gid: '1450063042', label: '06.08–06.14' },
+  { gid: '765296139',  label: '06.15–06.21' },
+  { gid: '1416966752', label: '06.22–06.28' },
+  { gid: '1762834858', label: '06.29–07.05' },
+];
 const DAYK = ['월', '화', '수', '목', '금', '토', '일'];
 const OFFSET = new Set(['', 'x', 'X', '휴방', '-', '휴뱅', '휴 방', '?', '???']);
 
@@ -87,12 +98,39 @@ export function parseWeekGrid(grid, members) {
   return { entries, weekStart, label };
 }
 
-/* 한 탭 불러오기 → {schedule, weekStart}. 실패 시 throw. */
+/* 한 탭 불러오기 → {schedule, weekStart, label, gid}. 실패 시 throw. */
 export async function loadWeekFromSheet(input, members, defaultId = DEFAULT_SHEET_ID) {
   const { sheetId, gid } = parseSheetRef(input, defaultId);
   const resp = await gvizFetch(sheetId, gid);
   if (!resp || resp.status !== 'ok') throw new Error('시트 응답 오류 (gid가 맞는지 확인)');
   const w = parseWeekGrid(gridFromResp(resp), members);
   if (!w || !w.entries.length) throw new Error('이 탭에서 스케줄을 못 찾았어요 (멤버 이름·요일 행 확인)');
-  return { schedule: w.entries, weekStart: w.weekStart };
+  return { schedule: w.entries, weekStart: w.weekStart, label: w.label || '', gid };
+}
+
+/* 여러 탭을 순서대로 불러와 주(week) 배열로. 실패한 탭은 건너뛴다.
+   onProgress(done, total)로 진행상황 알림(선택). */
+export async function loadTabsFromSheet(sheetId, tabs, members, onProgress) {
+  const weeks = [];
+  for (let i = 0; i < tabs.length; i++) {
+    const tab = tabs[i];
+    try {
+      const resp = await gvizFetch(sheetId, tab.gid);
+      if (resp && resp.status === 'ok') {
+        const w = parseWeekGrid(gridFromResp(resp), members);
+        if (w && w.entries.length) {
+          weeks.push({
+            gid: String(tab.gid),
+            label: w.label || tab.label || tab.gid,
+            weekStart: w.weekStart || '',
+            schedule: w.entries,
+          });
+        }
+      }
+    } catch { /* 한 탭 실패는 건너뜀 */ }
+    if (onProgress) onProgress(i + 1, tabs.length);
+  }
+  // weekStart(MM.DD) 기준 정렬
+  weeks.sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)));
+  return weeks;
 }

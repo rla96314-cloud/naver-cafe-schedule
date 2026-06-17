@@ -31,7 +31,11 @@ function defaultState() {
   }));
   const weekStart = (rows.find(r => r.요일 === '월' && r.날짜) || {}).날짜 || '06.15';
   return {
-    members, schedule, weekStart, sheetRef: '',
+    members,
+    // 시트 탭별로 분류 — 각 주(week)가 시트 탭 하나에 대응. weeks[weekIdx]가 현재 편집 대상.
+    weeks: [{ label: weekStart + ' 주', weekStart, schedule, gid: null }],
+    weekIdx: 0,
+    sheetId: '', sheetTabs: DEFAULT_SHEET_TABS.map(t => ({ ...t })),
     theme: {
       header: '주간 스케줄표', subtitle: '', fontSize: '보통', fontScale: 1, bg: '흰색',
       linkUnderline: true, collision: '좌우', radius: 16, align: '왼쪽',
@@ -44,17 +48,32 @@ let S = load();
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(STORE));
-    if (raw && raw.members && raw.schedule) return { ...defaultState(), ...raw, section: 'schedule', selId: null };
+    if (raw && raw.members) {
+      const base = defaultState();
+      const m = { ...base, ...raw, section: 'schedule', selId: null };
+      // 옛 단일주 저장본 마이그레이션
+      if (!Array.isArray(m.weeks) || !m.weeks.length) {
+        m.weeks = raw.schedule ? [{ label: (raw.weekStart || '주') + ' 주', weekStart: raw.weekStart || '', schedule: raw.schedule, gid: null }] : base.weeks;
+      }
+      if (typeof m.weekIdx !== 'number' || m.weekIdx >= m.weeks.length) m.weekIdx = m.weeks.length - 1;
+      if (!Array.isArray(m.sheetTabs) || !m.sheetTabs.length) m.sheetTabs = base.sheetTabs;
+      return m;
+    }
   } catch {}
   return defaultState();
 }
 function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
-      members: S.members, schedule: S.schedule, weekStart: S.weekStart, theme: S.theme, sheetRef: S.sheetRef,
+      members: S.members, weeks: S.weeks, weekIdx: S.weekIdx,
+      sheetId: S.sheetId, sheetTabs: S.sheetTabs, theme: S.theme,
     }));
   } catch {}
 }
+/* 현재 주 헬퍼 */
+function curWeek() { return S.weeks[S.weekIdx] || S.weeks[0]; }
+function curSched() { return curWeek().schedule; }
+function setCurSched(arr) { curWeek().schedule = arr; }
 
 /* "MM.DD" 월요일 → 요일별 날짜 맵 */
 function computeDates(weekStart) {
@@ -73,9 +92,10 @@ function themeForGen() {
   return { ...S.theme, ...{ logo: '' } };
 }
 function genHTML() {
+  const w = curWeek();
   return generateScheduleHTML({
-    members: S.members, schedule: S.schedule,
-    dates: computeDates(S.weekStart), theme: themeForGen(),
+    members: S.members, schedule: w.schedule,
+    dates: computeDates(w.weekStart), theme: themeForGen(),
   });
 }
 
@@ -111,7 +131,7 @@ function refreshPreview() {
   }
   const links = (html.match(/<a href=/g) || []).length;
   const badge = $('#pv-count');
-  if (badge) badge.textContent = `링크 ${links} · 방송 ${S.schedule.length}`;
+  if (badge) badge.textContent = `링크 ${links} · 방송 ${curSched().length}`;
   save();
 }
 
@@ -152,39 +172,73 @@ function leftNav() {
   return wrap;
 }
 
+/* ── 시트 탭 연동 영역 ── */
+function sheetBar() {
+  const sid = el('input', { value: S.sheetId, class: 'mono', style: inp + ';flex:1;min-width:0;font-size:12px',
+    placeholder: '시트 ID 또는 URL (비우면 기본 시트)',
+    oninput: e => { S.sheetId = e.target.value; save(); } });
+  const allBtn = el('button', { style: btn, onclick: () => loadAllTabs(allBtn) }, '↓ 시트 탭 전부 불러오기');
+  const addInput = el('input', { class: 'mono', style: inp + ';width:160px;font-size:12px', placeholder: '새 탭 URL / gid' });
+  const addBtn = el('button', { style: btn, onclick: () => appendTab(addInput, addBtn) }, '＋ 탭 추가');
+  return el('div', { style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;padding:10px 12px;background:#fff;border:1px solid var(--hair);border-radius:11px' }, [
+    el('span', { style: 'font-size:12.5px;font-weight:700;flex-shrink:0' }, '구글시트'),
+    sid, allBtn,
+    el('span', { style: 'width:1px;height:20px;background:var(--hair)' }),
+    addInput, addBtn,
+  ]);
+}
+
+/* ── 주(시트 탭) 선택 바 ── */
+const arrowBtn = 'width:28px;height:28px;border-radius:8px;border:1px solid var(--hair);background:#fff;cursor:pointer;font-size:16px;color:var(--sub);line-height:1;flex-shrink:0';
+function weekTabs() {
+  const bar = el('div', { style: 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px' });
+  bar.append(el('button', { style: arrowBtn, title: '이전 주', onclick: () => switchWeek(S.weekIdx - 1) }, '‹'));
+  S.weeks.forEach((w, i) => {
+    const on = i === S.weekIdx;
+    bar.append(el('button', {
+      style: `padding:6px 11px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:${on ? 700 : 600};` +
+        `border:1px solid ${on ? 'var(--accent)' : 'var(--hair)'};background:${on ? 'rgba(192,67,42,.08)' : '#fff'};color:${on ? 'var(--accent)' : 'var(--ink)'}`,
+      onclick: () => switchWeek(i),
+    }, w.label || ('주 ' + (i + 1))));
+  });
+  bar.append(el('button', { style: arrowBtn, title: '다음 주', onclick: () => switchWeek(S.weekIdx + 1) }, '›'));
+  bar.append(el('div', { style: 'flex:1' }));
+  bar.append(el('button', { style: btn + ';padding:6px 10px', title: '빈 주 추가', onclick: addBlankWeek }, '＋ 주'));
+  if (S.weeks.length > 1) bar.append(el('button', { style: btn + ';padding:6px 10px;color:#C0392B', onclick: () => deleteWeek(S.weekIdx) }, '이 주 삭제'));
+  return bar;
+}
+function switchWeek(i) { S.weekIdx = Math.max(0, Math.min(S.weeks.length - 1, i)); S.selId = null; render(); }
+function addBlankWeek() { S.weeks.push({ label: '새 주', weekStart: '', schedule: [], gid: null }); S.weekIdx = S.weeks.length - 1; render(); }
+function deleteWeek(i) {
+  if (S.weeks.length <= 1) return;
+  if (!confirm(`'${S.weeks[i].label}' 주를 목록에서 지워요. (시트 원본은 그대로)`)) return;
+  S.weeks.splice(i, 1); S.weekIdx = Math.max(0, Math.min(S.weeks.length - 1, i)); render();
+}
+
 /* ── 스케줄 패널 (편집 리스트) ── */
 let _newId = 0;
 function schedulePanel() {
+  const w = curWeek();
   const wrap = el('div', { style: 'flex:1;overflow-y:auto;padding:18px 22px' });
-  wrap.append(panelHead('스케줄 · ' + S.weekStart + ' 주', '한 줄 = 방송 하나. 요일·시간·멤버·제목·링크를 바로 고치면 오른쪽 미리보기에 즉시 반영돼요.'));
-
-  // 구글시트 연동 — 그 주 탭의 URL(또는 gid)을 붙여넣고 불러오기(현재 편집을 덮어씀).
-  const sheetStatus = el('span', { id: 'sheet-status', style: 'font-size:11.5px;color:var(--sub)' }, '');
-  const sheetBtn = el('button', { style: btn, onclick: () => loadSheet(sheetBtn, sheetStatus) }, '↓ 시트에서 불러오기');
-  const sheetRow = el('div', { style: 'display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:10px 12px;background:#fff;border:1px solid var(--hair);border-radius:11px' }, [
-    el('span', { style: 'font-size:12.5px;font-weight:700;flex-shrink:0' }, '구글시트'),
-    el('input', { value: S.sheetRef, class: 'mono', style: inp + ';flex:1;min-width:0;font-size:12px',
-      placeholder: '그 주 탭의 URL 또는 gid 붙여넣기 (비우면 첫 탭)',
-      oninput: e => { S.sheetRef = e.target.value; save(); } }),
-    sheetBtn, sheetStatus,
-  ]);
-  wrap.append(sheetRow);
+  wrap.append(panelHead('스케줄 · ' + (w.label || ''), '시트 탭별로 주를 넘기며 편집해요. 한 줄 = 방송 하나, 바로 고치면 오른쪽 미리보기에 즉시 반영돼요.'));
+  wrap.append(sheetBar());
+  wrap.append(weekTabs());
 
   const top = el('div', { style: 'display:flex;align-items:center;gap:10px;margin-bottom:12px' }, [
     el('span', { style: 'font-size:12.5px;color:var(--sub);font-weight:600' }, '이번 주 월요일'),
-    el('input', { value: S.weekStart, style: inp + ';width:80px', placeholder: '06.15',
-      oninput: e => { S.weekStart = e.target.value; refreshPreview(); } }),
+    el('input', { value: w.weekStart, style: inp + ';width:80px', placeholder: '06.15',
+      oninput: e => { w.weekStart = e.target.value; refreshPreview(); } }),
     el('div', { style: 'flex:1' }),
     el('button', { style: btnPrimary, onclick: () => addRow() }, '＋ 방송 추가'),
   ]);
   wrap.append(top);
 
-  const sorted = [...S.schedule].sort((a, b) =>
+  const sorted = [...w.schedule].sort((a, b) =>
     (DAYS.indexOf(a.day) - DAYS.indexOf(b.day)) || (timeToMinutes(a.time) - timeToMinutes(b.time)));
 
   const list = el('div', { style: 'display:flex;flex-direction:column;gap:6px' });
   for (const e of sorted) list.append(scheduleRow(e));
-  if (!sorted.length) list.append(el('div', { style: 'padding:30px;text-align:center;color:var(--sub);font-size:13px' }, '아직 방송이 없어요. ＋ 방송 추가를 눌러보세요.'));
+  if (!sorted.length) list.append(el('div', { style: 'padding:30px;text-align:center;color:var(--sub);font-size:13px' }, '이 주엔 방송이 없어요. ＋ 방송 추가 또는 시트에서 불러오기.'));
   wrap.append(list);
   return wrap;
 }
@@ -213,12 +267,12 @@ function scheduleRow(e) {
     oninput: ev => { e.url = ev.target.value; refreshPreview(); } });
   // 삭제
   const del = el('button', { style: btn + ';color:#C0392B;border-color:rgba(192,57,43,.35);padding:7px 10px', title: '삭제',
-    onclick: () => { S.schedule = S.schedule.filter(x => x.id !== e.id); render(); } }, '✕');
+    onclick: () => { setCurSched(curSched().filter(x => x.id !== e.id)); render(); } }, '✕');
   row.append(dot, daySel, timeIn, memSel, titleIn, urlIn, del);
   return row;
 }
 function addRow() {
-  S.schedule.push({ id: 'n' + (_newId++), day: '월', time: '12PM', mem: S.members[0].id, title: '', url: '' });
+  curSched().push({ id: 'n' + (_newId++), day: '월', time: '12PM', mem: S.members[0].id, title: '', url: '' });
   render();
 }
 
@@ -306,7 +360,7 @@ function previewPane() {
   return el('div', { style: 'width:480px;flex-shrink:0;border-left:1px solid var(--hair);background:#EEEAE2;display:flex;flex-direction:column' }, [
     el('div', { style: 'padding:12px 16px;border-bottom:1px solid var(--hair);background:#fff;display:flex;align-items:center;justify-content:space-between' }, [
       el('div', { style: 'font-size:13px;font-weight:700' }, ['대문 미리보기 ', el('span', { style: 'font-size:11px;font-weight:500;color:var(--sub)' }, '= 붙여넣을 결과')]),
-      el('span', { id: 'pv-count', style: 'font-size:10.5px;font-weight:700;color:var(--accent);background:rgba(192,67,42,.1);padding:3px 9px;border-radius:20px' }, `링크 ${links} · 방송 ${S.schedule.length}`),
+      el('span', { id: 'pv-count', style: 'font-size:10.5px;font-weight:700;color:var(--accent);background:rgba(192,67,42,.1);padding:3px 9px;border-radius:20px' }, `링크 ${links} · 방송 ${curSched().length}`),
     ]),
     el('style', { html: '.schd-card{transition:transform .1s} #pv-render a.schd-link:hover{opacity:.75}' }),
     el('div', { style: 'flex:1;overflow:auto;padding:16px' }, [
@@ -344,26 +398,38 @@ function fallbackCopy(text) {
   document.body.append(ta); ta.select(); try { document.execCommand('copy'); } catch {} ta.remove();
 }
 function exportCSV() {
-  const dates = computeDates(S.weekStart);
-  const rows = S.schedule.map(e => ({ 요일: e.day, 날짜: dates[e.day] || '', 시간: e.time, 멤버: e.mem, 제목: e.title, URL: e.url }));
+  const w = curWeek();
+  const dates = computeDates(w.weekStart);
+  const rows = w.schedule.map(e => ({ 요일: e.day, 날짜: dates[e.day] || '', 시간: e.time, 멤버: e.mem, 제목: e.title, URL: e.url }));
   const csv = toCSV(rows, ['요일', '날짜', '시간', '멤버', '제목', 'URL']);
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-  const a = el('a', { href: URL.createObjectURL(blob), download: `schedule-${S.weekStart}.csv` });
+  const a = el('a', { href: URL.createObjectURL(blob), download: `schedule-${w.weekStart || 'week'}.csv` });
   document.body.append(a); a.click(); a.remove();
 }
-async function loadSheet(btn, status) {
-  if (S.schedule.length && !confirm('현재 편집 내용을 시트 데이터로 덮어써요. 계속할까요?')) return;
-  const orig = btn.textContent;
-  btn.textContent = '불러오는 중…'; btn.disabled = true; status.textContent = '';
+/* 시트의 모든(알려진) 탭을 불러와 주 목록으로 분류. */
+async function loadAllTabs(btn) {
+  if (!confirm('시트의 탭들을 불러와 주(week) 목록을 새로 채워요. 현재 편집을 덮어쓸 수 있어요. 계속할까요?')) return;
+  const orig = btn.textContent; btn.disabled = true;
   try {
-    const { schedule, weekStart } = await loadWeekFromSheet(S.sheetRef, S.members, DEFAULT_SHEET_ID);
-    S.schedule = schedule.map((e, i) => ({ ...e, id: 'sh' + i }));
-    if (weekStart) S.weekStart = weekStart;
-    save(); render();
-  } catch (e) {
-    btn.textContent = orig; btn.disabled = false;
-    alert('불러오기 실패: ' + e.message);
-  }
+    const weeks = await loadTabsFromSheet(S.sheetId || DEFAULT_SHEET_ID, S.sheetTabs, S.members, (d, t) => { btn.textContent = `불러오는 중… ${d}/${t}`; });
+    if (!weeks.length) { alert('불러온 탭이 없어요. 시트 공유("링크 있는 사람 보기")·ID·gid를 확인해줘요.'); btn.textContent = orig; btn.disabled = false; return; }
+    S.weeks = weeks.map(w => ({ ...w, schedule: w.schedule.map((e, i) => ({ ...e, id: 'sh' + i })) }));
+    S.weekIdx = S.weeks.length - 1; S.selId = null; save(); render();
+  } catch (e) { alert('불러오기 실패: ' + e.message); btn.textContent = orig; btn.disabled = false; }
+}
+/* 새 주차 탭 하나를 URL/gid로 추가(append). */
+async function appendTab(input, btn) {
+  const ref = (input.value || '').trim();
+  if (!ref) return alert('탭 URL 또는 gid를 넣어줘요.');
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '…';
+  try {
+    const w = await loadWeekFromSheet(ref, S.members, S.sheetId || DEFAULT_SHEET_ID);
+    const wk = { gid: w.gid, label: w.label || w.weekStart || w.gid, weekStart: w.weekStart, schedule: w.schedule.map((e, i) => ({ ...e, id: 'sh' + i })) };
+    const idx = S.weeks.findIndex(x => x.gid && String(x.gid) === String(w.gid));
+    if (idx >= 0) S.weeks[idx] = wk; else S.weeks.push(wk);
+    if (!S.sheetTabs.find(t => String(t.gid) === String(w.gid))) S.sheetTabs.push({ gid: w.gid, label: wk.label });
+    S.weekIdx = idx >= 0 ? idx : S.weeks.length - 1; S.selId = null; save(); render();
+  } catch (e) { alert('탭 추가 실패: ' + e.message); btn.disabled = false; btn.textContent = orig; }
 }
 function importCSV() {
   const f = el('input', { type: 'file', accept: '.csv' });
@@ -374,9 +440,17 @@ function importCSV() {
       try {
         const rows = parseCSVObjects(String(r.result));
         if (!rows.length) return alert('빈 CSV예요.');
-        S.schedule = rows.map((row, i) => ({ id: 'i' + i, day: row.요일, time: row.시간, mem: row.멤버, title: row.제목, url: row.URL || '' }));
-        const ws = (rows.find(x => x.요일 === '월' && x.날짜) || {}).날짜; if (ws) S.weekStart = ws;
-        render();
+        const schedule = rows.map((row, i) => ({ id: 'i' + i, day: row.요일, time: row.시간, mem: row.멤버, title: row.제목, url: row.URL || '' }));
+        const ws = (rows.find(x => x.요일 === '월' && x.날짜) || {}).날짜 || '';
+        // CSV는 현재 주에 들어온다(현재 주가 비어있지 않으면 새 주로 추가).
+        if (curSched().length && !confirm('현재 주에 덮어쓸까요? 취소하면 새 주로 추가해요.')) {
+          S.weeks.push({ label: (ws || 'CSV') + ' 주', weekStart: ws, schedule, gid: null });
+          S.weekIdx = S.weeks.length - 1;
+        } else {
+          curWeek().schedule = schedule;
+          if (ws) curWeek().weekStart = ws;
+        }
+        S.selId = null; render();
       } catch (e) { alert('CSV를 읽지 못했어요: ' + e.message); }
     };
     r.readAsText(file);
