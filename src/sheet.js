@@ -23,7 +23,9 @@ const OFFSET = new Set(['', 'x', 'X', '휴방', '-', '휴뱅', '휴 방', '?', '
 /* 입력에서 sheetId·gid 추출. 전체 URL / "#gid=123" / 순수 숫자 gid 모두 허용. */
 export function parseSheetRef(input, defaultId = DEFAULT_SHEET_ID) {
   const s = String(input || '').trim();
-  let sheetId = defaultId, gid = '0';
+  // defaultId 자체가 URL로 들어와도 ID로 정규화 (호출측이 S.sheetId(URL)를 그대로 넘김)
+  const dm = String(defaultId).match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  let sheetId = dm ? dm[1] : defaultId, gid = '0';
   const idm = s.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
   if (idm) sheetId = idm[1];
   else if (/^[a-zA-Z0-9_-]{30,}$/.test(s)) sheetId = s; // 순수 시트 ID(약 44자)
@@ -32,7 +34,8 @@ export function parseSheetRef(input, defaultId = DEFAULT_SHEET_ID) {
   return { sheetId, gid };
 }
 
-function gvizFetch(sheetId, gid) {
+/* gviz JSONP. ref = {gid} 또는 {name}(탭 이름 — members/config처럼 이름으로 찾을 때). */
+function gvizFetch(sheetId, ref) {
   return new Promise((resolve, reject) => {
     window.google = window.google || {};
     window.google.visualization = window.google.visualization || {};
@@ -42,7 +45,8 @@ function gvizFetch(sheetId, gid) {
     const fin = (fn, a) => { if (done) return; done = true; try { s.remove(); } catch {} fn(a); };
     window.google.visualization.Query.setResponse = resp => fin(resolve, resp);
     s.onerror = () => fin(reject, new Error('시트를 불러오지 못함 — 공유가 "링크 있는 사람 보기"인지 확인'));
-    s.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?gid=${gid}&tqx=out:json&headers=0`;
+    const sel = ref.name != null ? `sheet=${encodeURIComponent(ref.name)}` : `gid=${ref.gid}`;
+    s.src = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?${sel}&tqx=out:json&headers=0`;
     document.head.appendChild(s);
     setTimeout(() => fin(reject, new Error('시트 응답 시간 초과')), 15000);
   });
@@ -107,7 +111,7 @@ export function parseWeekGrid(grid, members) {
 /* 한 탭 불러오기 → {schedule, weekStart, label, gid}. 실패 시 throw. */
 export async function loadWeekFromSheet(input, members, defaultId = DEFAULT_SHEET_ID) {
   const { sheetId, gid } = parseSheetRef(input, defaultId);
-  const resp = await gvizFetch(sheetId, gid);
+  const resp = await gvizFetch(sheetId, { gid });
   if (!resp || resp.status !== 'ok') throw new Error('시트 응답 오류 (gid가 맞는지 확인)');
   const w = parseWeekGrid(gridFromResp(resp), members);
   if (!w || !w.entries.length) throw new Error('이 탭에서 스케줄을 못 찾았어요 (멤버 이름·요일 행 확인)');
@@ -122,7 +126,7 @@ export async function loadTabsFromSheet(sheetIdOrUrl, tabs, members, onProgress)
   for (let i = 0; i < tabs.length; i++) {
     const tab = tabs[i];
     try {
-      const resp = await gvizFetch(sheetId, tab.gid);
+      const resp = await gvizFetch(sheetId, { gid: tab.gid });
       if (resp && resp.status === 'ok') {
         const w = parseWeekGrid(gridFromResp(resp), members);
         if (w && w.entries.length) {
@@ -140,4 +144,49 @@ export async function loadTabsFromSheet(sheetIdOrUrl, tabs, members, onProgress)
   // weekStart(MM.DD) 기준 정렬
   weeks.sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)));
   return weeks;
+}
+
+/* ── v2: 설정도 시트에 (members / config 탭) ──────────────────────────────
+   운영진 공유의 핵심 — 색·URL·이미지·테마가 시트에 있으면 누가 열어도 같은 결과.
+   탭이 아직 없으면 throw → 호출측이 기본값으로 폴백. */
+
+/* members 탭: 헤더 = 멤버 | 배경색 | 글자색 | 채널URL | 이미지URL. id는 이름 그대로. */
+export async function loadMembersTab(sheetIdOrUrl) {
+  const sheetId = parseSheetRef(sheetIdOrUrl).sheetId;
+  const resp = await gvizFetch(sheetId, { name: 'members' });
+  if (!resp || resp.status !== 'ok') throw new Error('members 탭 없음');
+  const grid = gridFromResp(resp);
+  const hi = grid.findIndex(r => r.some(c => c.trim() === '멤버'));
+  if (hi < 0) throw new Error('members 탭에 "멤버" 헤더가 없음');
+  const head = grid[hi].map(c => c.trim());
+  const col = k => head.indexOf(k);
+  const iName = col('멤버'), iBg = col('배경색'), iFg = col('글자색'), iUrl = col('채널URL'), iImg = col('이미지URL');
+  const out = [];
+  for (let i = hi + 1; i < grid.length; i++) {
+    const name = (grid[i][iName] || '').trim();
+    if (!name) continue;
+    out.push({
+      id: name, name,
+      bg: (grid[i][iBg] || '#CCCCCC').trim(),
+      fg: (grid[i][iFg] || '#111111').trim(),
+      url: iUrl >= 0 ? (grid[i][iUrl] || '').trim() : '',
+      img: iImg >= 0 ? (grid[i][iImg] || '').trim() : '',
+    });
+  }
+  if (!out.length) throw new Error('members 탭이 비어있음');
+  return out;
+}
+
+/* config 탭: [키 | 값] 행. 키: 헤더 / 배지 / 로고. 없어도 됨. */
+const CONFIG_KEYS = { 헤더: 'header', 배지: 'subtitle', 로고: 'logo' };
+export async function loadConfigTab(sheetIdOrUrl) {
+  const sheetId = parseSheetRef(sheetIdOrUrl).sheetId;
+  const resp = await gvizFetch(sheetId, { name: 'config' });
+  if (!resp || resp.status !== 'ok') throw new Error('config 탭 없음');
+  const out = {};
+  for (const row of gridFromResp(resp)) {
+    const k = CONFIG_KEYS[(row[0] || '').trim()];
+    if (k) out[k] = (row[1] || '').trim();
+  }
+  return out;
 }

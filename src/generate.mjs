@@ -212,7 +212,8 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       `height:${cardH}px;overflow:hidden;` +
       (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 
-    return `<div class="schd-card" style="${style}">${body}</div>`;
+    // data-eid: 미리보기 클릭 편집용. 복사 시 UI가 제거하고 내보낸다.
+    return `<div class="schd-card"${c.id ? ` data-eid="${escapeAttr(c.id)}"` : ''} style="${style}">${body}</div>`;
   };
 
   /* 시간 행 */

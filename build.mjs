@@ -56,4 +56,5 @@ ${ui}
 `;
 
 writeFileSync('카페대문.html', html);
-process.stderr.write(`✓ 카페대문.html 생성 (${(html.length / 1024).toFixed(0)}KB, 무의존·오프라인 동작)\n`);
+writeFileSync('index.html', html); // GitHub Pages용 — repo를 Pages로 켜면 URL 하나로 운영진 공유
+process.stderr.write(`✓ 카페대문.html + index.html 생성 (${(html.length / 1024).toFixed(0)}KB, 무의존)\n`);
