@@ -190,3 +190,44 @@ export async function loadConfigTab(sheetIdOrUrl) {
   }
   return out;
 }
+
+/* ── 새 주차 탭 자동 발견 ──────────────────────────────────────────────
+   브라우저는 시트의 탭 목록을 직접 못 읽는다(CORS). 대신 이 시트의 탭 이름이
+   "MMDD"(그 주 월요일) 규칙임을 이용해 이름으로 프로브한다.
+   gviz sheet=<이름>은 없는 이름이면 기본 탭으로 폴백하므로,
+   "파싱된 라벨이 프로브한 MMDD로 시작하는지"로 진짜 탭만 걸러낸다(실측 확정). */
+
+const MDAYS2 = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function nextMonday(mmdd) { // 'MM.DD' → +7일 'MM.DD'
+  const m = String(mmdd).match(/(\d{1,2})[.](\d{1,2})/);
+  if (!m) return null;
+  let mo = +m[1], da = +m[2] + 7;
+  if (da > MDAYS2[mo - 1]) { da -= MDAYS2[mo - 1]; mo = mo % 12 + 1; }
+  return `${String(mo).padStart(2, '0')}.${String(da).padStart(2, '0')}`;
+}
+
+/* 탭 이름으로 한 주 로드 + 라벨 검증. 폴백/불일치면 throw. */
+export async function loadWeekByName(sheetIdOrUrl, name, members) {
+  const sheetId = parseSheetRef(sheetIdOrUrl).sheetId;
+  const resp = await gvizFetch(sheetId, { name });
+  if (!resp || resp.status !== 'ok') throw new Error('시트 응답 오류');
+  const w = parseWeekGrid(gridFromResp(resp), members);
+  if (!w || !w.entries.length) throw new Error(`"${name}" 탭에서 스케줄을 못 찾음`);
+  const wantMMDD = String(name).replace(/[^0-9]/g, '');
+  const gotMMDD = String(w.label || '').replace(/\s/g, '').slice(0, 4);
+  if (wantMMDD && gotMMDD !== wantMMDD) throw new Error(`"${name}" 탭 없음(폴백 감지)`);
+  return { schedule: w.entries, weekStart: w.weekStart, label: w.label || name, name };
+}
+
+/* 마지막으로 아는 주(weekStart 'MM.DD') 다음 월요일부터 probe개 주를 이름으로 탐색.
+   찾은 주 배열 반환(빈 주·미래 미작성 탭은 건너뜀). */
+export async function discoverWeeks(sheetIdOrUrl, members, fromWeekStart, probe = 8) {
+  const found = [];
+  let cur = nextMonday(fromWeekStart);
+  for (let i = 0; i < probe && cur; i++) {
+    const name = cur.replace('.', ''); // '07.06' → '0706'
+    try { found.push(await loadWeekByName(sheetIdOrUrl, name, members)); } catch {}
+    cur = nextMonday(cur);
+  }
+  return found;
+}

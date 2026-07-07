@@ -115,6 +115,38 @@ function computeWarnings() {
 }
 
 /* ── 시트 동기화 (무상태의 심장) ── */
+/* 주 로드: gid 또는 탭 이름(name) 어느 쪽으로든. */
+function fetchWeek(w) {
+  return w.name
+    ? loadWeekByName(S.sheetId, w.name, S.members)
+    : loadWeekFromSheet(w.gid, S.members, S.sheetId);
+}
+/* 새 주차 탭 자동 발견 — 마지막 주 다음 월요일부터 탭 이름(MMDD)으로 프로브. */
+async function discoverAndAppend(probe) {
+  const starts = S.weeks.map(w => w.weekStart).filter(Boolean).sort();
+  const latest = starts[starts.length - 1];
+  if (!latest) return false;
+  const found = await discoverWeeks(S.sheetId, S.members, latest, probe);
+  let added = false;
+  for (const f of found) {
+    if (S.weeks.some(w => w.label === f.label || (w.weekStart && w.weekStart === f.weekStart))) continue;
+    S.weeks.push({ gid: null, name: f.name, label: f.label, weekStart: f.weekStart, schedule: f.schedule, loaded: true, dirty: false });
+    added = true;
+  }
+  if (added) S.weeks.sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)));
+  return added;
+}
+/* 오늘이 속한 주의 인덱스(월요일 weekStart 기준). 없으면 마지막 주. */
+function pickThisWeek() {
+  const now = new Date();
+  const md = (now.getMonth() + 1) * 100 + now.getDate(); // MDD 숫자
+  let best = S.weeks.length - 1;
+  S.weeks.forEach((w, i) => {
+    const m = String(w.weekStart || '').match(/(\d{2})[.](\d{2})/);
+    if (m && (+m[1]) * 100 + (+m[2]) <= md) best = i; // 시작일이 오늘 이전인 마지막 주
+  });
+  return best;
+}
 async function syncFromSheet({ full = false } = {}) {
   S.sync = '동기화 중…'; paintSync();
   let ok = false;
@@ -126,11 +158,14 @@ async function syncFromSheet({ full = false } = {}) {
     const w = S.weeks[i];
     if (w.dirty && !full) continue; // 손으로 고친 주는 자동으로 덮지 않음
     try {
-      const r = await loadWeekFromSheet(w.gid, S.members, S.sheetId);
+      const r = await fetchWeek(w);
       Object.assign(w, { schedule: r.schedule, weekStart: r.weekStart, label: r.label || w.label, loaded: true, dirty: false });
       ok = true;
     } catch {}
   }
+  // 새 주차 탭 자동 발견: 평소엔 다음 3주만 가볍게, '전체 다시 불러오기'는 10주까지.
+  const wasLatest = S.weekIdx >= S.weeks.length - 1;
+  try { if (await discoverAndAppend(full ? 10 : 3)) { ok = true; if (wasLatest) { S.weekIdx = pickThisWeek(); S.selId = null; } } } catch {}
   S.sync = ok ? '시트' : '오프라인';
   save(); render();
 }
@@ -138,7 +173,7 @@ async function ensureWeekLoaded(i) {
   const w = S.weeks[i];
   if (w.loaded || w.dirty) return;
   try {
-    const r = await loadWeekFromSheet(w.gid, S.members, S.sheetId);
+    const r = await fetchWeek(w);
     Object.assign(w, { schedule: r.schedule, weekStart: r.weekStart, label: r.label || w.label, loaded: true });
     save();
   } catch {}
@@ -210,13 +245,18 @@ async function switchWeek(i) {
 }
 async function appendTab(input) {
   const ref = (input.value || '').trim();
-  if (!ref) return alert('그 주 시트 탭의 URL 또는 gid를 넣어줘요.');
+  if (!ref) return alert('그 주 시트 탭의 이름(예: 0706)이나 URL/gid를 넣어줘요.');
   try {
-    const r = await loadWeekFromSheet(ref, S.members, S.sheetId);
-    const wk = { gid: String(r.gid), label: r.label || r.weekStart || r.gid, weekStart: r.weekStart, schedule: r.schedule, loaded: true, dirty: false };
-    const idx = S.weeks.findIndex(x => String(x.gid) === String(r.gid));
+    // 5자리 이하 숫자·비숫자 = 탭 이름(예: 0706), 그 외 = URL/gid
+    const byName = /^\d{1,5}$/.test(ref) || !/^\d+$|gid=|spreadsheets/.test(ref);
+    const r = byName
+      ? await loadWeekByName(S.sheetId, ref, S.members)
+      : await loadWeekFromSheet(ref, S.members, S.sheetId);
+    const wk = { gid: r.gid ? String(r.gid) : null, name: r.name || null, label: r.label || r.weekStart || ref, weekStart: r.weekStart, schedule: r.schedule, loaded: true, dirty: false };
+    const idx = S.weeks.findIndex(x => x.label === wk.label || (wk.gid && String(x.gid) === wk.gid));
     if (idx >= 0) S.weeks[idx] = wk; else S.weeks.push(wk);
-    S.weekIdx = idx >= 0 ? idx : S.weeks.length - 1;
+    S.weeks.sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)));
+    S.weekIdx = S.weeks.findIndex(x => x.label === wk.label);
     save(); render();
   } catch (e) { alert('탭 추가 실패: ' + e.message); }
 }
