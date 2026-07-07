@@ -706,6 +706,25 @@ async function discoverWeeks(sheetIdOrUrl, members, fromWeekStart, probe = 8) {
   return found;
 }
 
+/* ── 탭 목록 통째로 읽기 (htmlview) ─────────────────────────────────────
+   실측: docs.google.com/htmlview는 웹 origin에는 CORS를 허용(Origin 반사),
+   file://(null origin)은 거부. → 웹(GitHub Pages 등)에선 이걸로 전체 탭을 즉시 확보하고,
+   file://에선 이름 프로브(discoverWeeks)로 폴백한다. */
+async function listAllTabs(sheetIdOrUrl) {
+  const sheetId = parseSheetRef(sheetIdOrUrl).sheetId;
+  const res = await fetch(`https://docs.google.com/spreadsheets/d/${sheetId}/htmlview`, { credentials: 'omit' });
+  if (!res.ok) throw new Error('htmlview ' + res.status);
+  const html = await res.text();
+  const out = [];
+  const re = /items\.push\(\{name:\s*"((?:[^"\\]|\\.)*)"[\s\S]*?gid:\s*"(\d+)"/g;
+  let m;
+  while ((m = re.exec(html))) {
+    try { out.push({ name: JSON.parse('"' + m[1] + '"'), gid: m[2] }); } catch {}
+  }
+  if (!out.length) throw new Error('탭 목록 파싱 실패');
+  return out.reverse(); // htmlview는 최신 탭부터 → 오래된 순으로
+}
+
 /* ───── 기본 데이터 (data/*.csv에서 빌드시 주입) ───── */
 const DEFAULT_MEMBERS_CSV = "id,멤버,배경색,글자색,기본URL\nchoiaeri,최애리,#F2A93B,#FFFFFF,\nyeowooyeon,여우연,#8AB4F8,#FFFFFF,\nnano,나노,#B7BBC0,#202124,\nnunyo,눈요,#7FD6EB,#FFFFFF,\nseolhong,설홍,#FF5A5A,#FFFFFF,\nruchel,루첼,#4A4A4A,#FFFFFF,\nbayblue,베이블루,#3A56C5,#FFFFFF,\n";
 const DEFAULT_SCHEDULE_CSV = "요일,날짜,시간,멤버,제목,URL\n월,06.15,9AM,choiaeri,♥아침 뉴스♥,\n월,06.15,11AM,yeowooyeon,소소한 소통,\n월,06.15,12PM,nano,카페유머글,\n월,06.15,2PM,nunyo,동요 방송,\n월,06.15,2PM,seolhong,기생수 같이보기,\n월,06.15,7PM,ruchel,니케 스토리 21지 부터,\n화,06.16,9PM,seolhong,후열 롤,\n수,06.17,9AM,choiaeri,♥아침 뉴스♥,\n수,06.17,4PM,yeowooyeon,콘서트 전 마지막 방송..!!,\n수,06.17,7PM,nano,영풍트럭운전,\n수,06.17,7PM,ruchel,증명의 날,\n목,06.18,9AM,choiaeri,♥아침 뉴스♥,\n목,06.18,2PM,seolhong,똥겜핀볼,\n목,06.18,6PM,nunyo,소통 스플릿픽션 w.루첼,\n목,06.18,7PM,ruchel,눈요랑 스플릿픽션,\n목,06.18,8PM,yeowooyeon,여우연 콘서트 FOXLOG : 우리의 기록,\n금,06.19,8AM,nano,아침노래방/월드컵응원방,\n금,06.19,8AM,ruchel,월드컵 응원,\n금,06.19,9AM,choiaeri,♥아침 뉴스♥,\n금,06.19,10AM,seolhong,축구월드컵 입중계,\n금,06.19,4PM,yeowooyeon,콘서트 후열 회식 주루마블!,\n금,06.19,6PM,nunyo,괴식 마추기,\n토,06.20,2PM,seolhong,애교데이 리턴즈!,\n토,06.20,4PM,yeowooyeon,니케 푹먹 데이,\n토,06.20,6PM,nunyo,블루아카이브 스토리,\n일,06.21,12PM,nano,레데리2,\n일,06.21,2PM,seolhong,너목(木)보 대회 시상,\n일,06.21,4PM,yeowooyeon,애교데이,\n일,06.21,6PM,nunyo,동화요정,\n일,06.21,7PM,ruchel,야랄소통,\n";
@@ -841,7 +860,13 @@ function fetchWeek(w) {
 }
 /* 새 주차 탭 자동 발견 — 마지막 주 다음 월요일부터 탭 이름(MMDD)으로 프로브. */
 async function discoverAndAppend(probe) {
-  const starts = S.weeks.map(w => w.weekStart).filter(Boolean).sort();
+  // weekStart가 아직 없으면(첫 실행, 미로드) 라벨('06.29–07.05'/'0706 ~ 0712')에서 유도
+  const startOf = w => {
+    if (w.weekStart) return w.weekStart;
+    const m = String(w.label || '').match(/^(\d{2})\.?(\d{2})/);
+    return m ? `${m[1]}.${m[2]}` : '';
+  };
+  const starts = S.weeks.map(startOf).filter(Boolean).sort();
   const latest = starts[starts.length - 1];
   if (!latest) return false;
   const found = await discoverWeeks(S.sheetId, S.members, latest, probe);
@@ -865,25 +890,53 @@ function pickThisWeek() {
   });
   return best;
 }
+/* 시트의 실제 탭 목록으로 주 목록을 동기화(미러링).
+   웹 origin: htmlview로 전체 목록을 읽어 새 탭 추가 + 시트에서 지워진 탭 제거.
+   file://: CORS로 목록을 못 읽으므로 이름 프로브 폴백(추가만, 제거 없음). */
+async function refreshTabs(full) {
+  try {
+    const tabs = await listAllTabs(S.sheetId);
+    const skip = new Set(['members', 'config']);
+    const byGid = new Map(S.weeks.filter(w => w.gid).map(w => [String(w.gid), w]));
+    const byName = new Map(S.weeks.filter(w => w.name).map(w => [w.name, w]));
+    for (const tb of tabs) {
+      if (skip.has(String(tb.name).trim().toLowerCase())) continue;
+      const hit = byGid.get(String(tb.gid)) || byName.get(tb.name);
+      if (hit) { if (!hit.gid) hit.gid = tb.gid; continue; }
+      const mm = String(tb.name).match(/^(\d{2})(\d{2})$/); // '0706' → weekStart 추정
+      S.weeks.push({ gid: tb.gid, name: null, label: tb.name, weekStart: mm ? `${mm[1]}.${mm[2]}` : '', schedule: [], loaded: false, dirty: false });
+    }
+    // 시트에 없는 탭은 제거(시트 = 진실). 단 손으로 고친 주는 보존.
+    const live = new Set(tabs.map(tb => String(tb.gid)));
+    const curLabel = curWeek() && curWeek().label;
+    S.weeks = S.weeks.filter(w => w.dirty || !w.gid ? true : live.has(String(w.gid)));
+    const ci = S.weeks.findIndex(w => w.label === curLabel);
+    S.weekIdx = ci >= 0 ? ci : Math.min(S.weekIdx, S.weeks.length - 1);
+    S.weeks.sort((a, b) => String(a.weekStart || '00.00').localeCompare(String(b.weekStart || '00.00')));
+    return true;
+  } catch {
+    try { return await discoverAndAppend(full ? 10 : 3); } catch { return false; }
+  }
+}
 async function syncFromSheet({ full = false } = {}) {
   S.sync = '동기화 중…'; paintSync();
   let ok = false;
   try { S.members = await loadMembersTab(S.sheetId); S.membersSource = 'sheet'; ok = true; }
   catch { /* members 탭 없음 → 기존 값 유지 */ }
   try { Object.assign(S.theme, await loadConfigTab(S.sheetId)); ok = true; } catch {}
+  // 1) 탭 목록 동기화 → 2) 오늘 주 선택 → 3) 데이터 로드
+  const wasLatest = S.weekIdx >= S.weeks.length - 1;
+  if (await refreshTabs(full)) { ok = true; if (wasLatest) { S.weekIdx = pickThisWeek(); S.selId = null; } }
   const targets = full ? S.weeks.map((_, i) => i) : [S.weekIdx];
   for (const i of targets) {
     const w = S.weeks[i];
-    if (w.dirty && !full) continue; // 손으로 고친 주는 자동으로 덮지 않음
+    if (!w || (w.dirty && !full) || (!full && w.loaded && i !== S.weekIdx)) continue;
     try {
       const r = await fetchWeek(w);
       Object.assign(w, { schedule: r.schedule, weekStart: r.weekStart, label: r.label || w.label, loaded: true, dirty: false });
       ok = true;
     } catch {}
   }
-  // 새 주차 탭 자동 발견: 평소엔 다음 3주만 가볍게, '전체 다시 불러오기'는 10주까지.
-  const wasLatest = S.weekIdx >= S.weeks.length - 1;
-  try { if (await discoverAndAppend(full ? 10 : 3)) { ok = true; if (wasLatest) { S.weekIdx = pickThisWeek(); S.selId = null; } } } catch {}
   S.sync = ok ? '시트' : '오프라인';
   save(); render();
 }

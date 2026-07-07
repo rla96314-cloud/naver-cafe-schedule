@@ -231,3 +231,22 @@ export async function discoverWeeks(sheetIdOrUrl, members, fromWeekStart, probe 
   }
   return found;
 }
+
+/* ── 탭 목록 통째로 읽기 (htmlview) ─────────────────────────────────────
+   실측: docs.google.com/htmlview는 웹 origin에는 CORS를 허용(Origin 반사),
+   file://(null origin)은 거부. → 웹(GitHub Pages 등)에선 이걸로 전체 탭을 즉시 확보하고,
+   file://에선 이름 프로브(discoverWeeks)로 폴백한다. */
+export async function listAllTabs(sheetIdOrUrl) {
+  const sheetId = parseSheetRef(sheetIdOrUrl).sheetId;
+  const res = await fetch(`https://docs.google.com/spreadsheets/d/${sheetId}/htmlview`, { credentials: 'omit' });
+  if (!res.ok) throw new Error('htmlview ' + res.status);
+  const html = await res.text();
+  const out = [];
+  const re = /items\.push\(\{name:\s*"((?:[^"\\]|\\.)*)"[\s\S]*?gid:\s*"(\d+)"/g;
+  let m;
+  while ((m = re.exec(html))) {
+    try { out.push({ name: JSON.parse('"' + m[1] + '"'), gid: m[2] }); } catch {}
+  }
+  if (!out.length) throw new Error('탭 목록 파싱 실패');
+  return out.reverse(); // htmlview는 최신 탭부터 → 오래된 순으로
+}

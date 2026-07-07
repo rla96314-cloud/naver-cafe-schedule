@@ -129,7 +129,13 @@ function fetchWeek(w) {
 }
 /* 새 주차 탭 자동 발견 — 마지막 주 다음 월요일부터 탭 이름(MMDD)으로 프로브. */
 async function discoverAndAppend(probe) {
-  const starts = S.weeks.map(w => w.weekStart).filter(Boolean).sort();
+  // weekStart가 아직 없으면(첫 실행, 미로드) 라벨('06.29–07.05'/'0706 ~ 0712')에서 유도
+  const startOf = w => {
+    if (w.weekStart) return w.weekStart;
+    const m = String(w.label || '').match(/^(\d{2})\.?(\d{2})/);
+    return m ? `${m[1]}.${m[2]}` : '';
+  };
+  const starts = S.weeks.map(startOf).filter(Boolean).sort();
   const latest = starts[starts.length - 1];
   if (!latest) return false;
   const found = await discoverWeeks(S.sheetId, S.members, latest, probe);
@@ -153,25 +159,53 @@ function pickThisWeek() {
   });
   return best;
 }
+/* 시트의 실제 탭 목록으로 주 목록을 동기화(미러링).
+   웹 origin: htmlview로 전체 목록을 읽어 새 탭 추가 + 시트에서 지워진 탭 제거.
+   file://: CORS로 목록을 못 읽으므로 이름 프로브 폴백(추가만, 제거 없음). */
+async function refreshTabs(full) {
+  try {
+    const tabs = await listAllTabs(S.sheetId);
+    const skip = new Set(['members', 'config']);
+    const byGid = new Map(S.weeks.filter(w => w.gid).map(w => [String(w.gid), w]));
+    const byName = new Map(S.weeks.filter(w => w.name).map(w => [w.name, w]));
+    for (const tb of tabs) {
+      if (skip.has(String(tb.name).trim().toLowerCase())) continue;
+      const hit = byGid.get(String(tb.gid)) || byName.get(tb.name);
+      if (hit) { if (!hit.gid) hit.gid = tb.gid; continue; }
+      const mm = String(tb.name).match(/^(\d{2})(\d{2})$/); // '0706' → weekStart 추정
+      S.weeks.push({ gid: tb.gid, name: null, label: tb.name, weekStart: mm ? `${mm[1]}.${mm[2]}` : '', schedule: [], loaded: false, dirty: false });
+    }
+    // 시트에 없는 탭은 제거(시트 = 진실). 단 손으로 고친 주는 보존.
+    const live = new Set(tabs.map(tb => String(tb.gid)));
+    const curLabel = curWeek() && curWeek().label;
+    S.weeks = S.weeks.filter(w => w.dirty || !w.gid ? true : live.has(String(w.gid)));
+    const ci = S.weeks.findIndex(w => w.label === curLabel);
+    S.weekIdx = ci >= 0 ? ci : Math.min(S.weekIdx, S.weeks.length - 1);
+    S.weeks.sort((a, b) => String(a.weekStart || '00.00').localeCompare(String(b.weekStart || '00.00')));
+    return true;
+  } catch {
+    try { return await discoverAndAppend(full ? 10 : 3); } catch { return false; }
+  }
+}
 async function syncFromSheet({ full = false } = {}) {
   S.sync = '동기화 중…'; paintSync();
   let ok = false;
   try { S.members = await loadMembersTab(S.sheetId); S.membersSource = 'sheet'; ok = true; }
   catch { /* members 탭 없음 → 기존 값 유지 */ }
   try { Object.assign(S.theme, await loadConfigTab(S.sheetId)); ok = true; } catch {}
+  // 1) 탭 목록 동기화 → 2) 오늘 주 선택 → 3) 데이터 로드
+  const wasLatest = S.weekIdx >= S.weeks.length - 1;
+  if (await refreshTabs(full)) { ok = true; if (wasLatest) { S.weekIdx = pickThisWeek(); S.selId = null; } }
   const targets = full ? S.weeks.map((_, i) => i) : [S.weekIdx];
   for (const i of targets) {
     const w = S.weeks[i];
-    if (w.dirty && !full) continue; // 손으로 고친 주는 자동으로 덮지 않음
+    if (!w || (w.dirty && !full) || (!full && w.loaded && i !== S.weekIdx)) continue;
     try {
       const r = await fetchWeek(w);
       Object.assign(w, { schedule: r.schedule, weekStart: r.weekStart, label: r.label || w.label, loaded: true, dirty: false });
       ok = true;
     } catch {}
   }
-  // 새 주차 탭 자동 발견: 평소엔 다음 3주만 가볍게, '전체 다시 불러오기'는 10주까지.
-  const wasLatest = S.weekIdx >= S.weeks.length - 1;
-  try { if (await discoverAndAppend(full ? 10 : 3)) { ok = true; if (wasLatest) { S.weekIdx = pickThisWeek(); S.selId = null; } } } catch {}
   S.sync = ok ? '시트' : '오프라인';
   save(); render();
 }
