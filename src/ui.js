@@ -36,14 +36,14 @@ function fallbackMembers() {
 }
 const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
-  fontSize: '보통', fontScale: 1, cardHeight: 100, nameFont: 0, titleFont: 18, radius: 0,
-  bg: '흰색', linkUnderline: true, collision: '좌우', align: '왼쪽',
-  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
+  fontSize: '보통', fontScale: 1, cardHeight: 104, nameFont: 0, titleFont: 12, radius: 16,
+  bg: '흰색', linkUnderline: false, collision: '좌우', align: '왼쪽',
+  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', pv: 1, // pv = 포스터 룩 버전(캐시 마이그레이션용)
 };
 const PRESETS = {
-  '직사각형(기본)': { radius: 0, cardHeight: 100, nameFont: 0, titleFont: 18 },
-  '둥근 포스터':    { radius: 16, cardHeight: 100, nameFont: 0, titleFont: 18 },
-  '컴팩트':         { radius: 0, cardHeight: 64, nameFont: 0, titleFont: 12 },
+  '둥근 포스터(기본)': { radius: 16, cardHeight: 104, nameFont: 0, titleFont: 12 },
+  '직사각형':          { radius: 0, cardHeight: 100, nameFont: 0, titleFont: 18 },
+  '컴팩트':            { radius: 0, cardHeight: 64, nameFont: 0, titleFont: 12 },
 };
 
 /* ── 상태 ──
@@ -57,6 +57,13 @@ function boot() {
   // 구역제 레이아웃 이전 캐시(nameFont 없음)는 카드 치수를 새 기본값으로 올림
   const cachedTheme = cached.theme || {};
   if (cachedTheme.nameFont == null) { delete cachedTheme.cardHeight; delete cachedTheme.pillPos; }
+  // 포스터 룩(pv:1) 이전 캐시: 비주얼 키를 지워 새 기본값(둥근 포스터)을 받게 함
+  if ((cachedTheme.pv || 0) < THEME_DEFAULT.pv) {
+    for (const k of ['cardHeight', 'radius', 'titleFont', 'linkUnderline']) delete cachedTheme[k];
+    // 폴백 멤버 글자색도 옛 캐시(어두운 fg)면 새 기본으로 — 시트 members 탭이 있으면 어차피 시트가 이김
+    if (cached.membersSource !== 'sheet' && Array.isArray(cached.members)) delete cached.members;
+    cachedTheme.pv = THEME_DEFAULT.pv;
+  }
   return {
     members: cached.members && cached.members.length ? cached.members : fallbackMembers(),
     membersSource: cached.membersSource === 'sheet' ? 'cache' : 'default',

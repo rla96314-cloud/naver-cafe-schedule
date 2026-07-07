@@ -106,12 +106,12 @@ const DEFAULT_SURVIVE = {
 
 const DAYS = ['월', '화', '수', '목', '금', '토', '일'];
 const DOW = { 월:'월요일', 화:'화요일', 수:'수요일', 목:'목요일', 금:'금요일', 토:'토요일', 일:'일요일' };
-const DAY_TONE = { 토:'#2F73D8', 일:'#D8392F' }; // 주말 색, 평일은 잉크색
+const DAY_TONE = { 토:'#2F80ED', 일:'#EB5757' }; // 주말 색, 평일은 잉크색
 
 const SIZE = {
-  작게: { name:12,   title:10.5, pill:9.5,  dow:10.5, date:17, big:16,   thumb:34 },
-  보통: { name:14,   title:12,   pill:11,   dow:11.5, date:21, big:18.5, thumb:42 },
-  크게: { name:16,   title:13.5, pill:12.5, dow:12.5, date:25, big:21,   thumb:50 },
+  작게: { name:12,   title:10.5, pill:9.5,  dow:10,   date:20, big:17,   thumb:34 },
+  보통: { name:14,   title:12,   pill:11,   dow:11,   date:26, big:21,   thumb:42 },
+  크게: { name:16,   title:13.5, pill:12.5, dow:12,   date:30, big:24,   thumb:50 },
 };
 const FONT = {
   Pretendard: "'Pretendard', -apple-system, sans-serif",
@@ -119,14 +119,15 @@ const FONT = {
   검은고딕:   "'Black Han Sans', 'Pretendard', sans-serif",
 };
 const BG = {
-  흰색:   { paper:'#FFFFFF', dark:false },
+  흰색:   { paper:'#EFEFEF', dark:false }, // 레퍼런스 포스터: 연회색 캔버스
   종이:   { paper:'#F6F4EF', dark:false },
   어둡게: { paper:'#1C1A18', dark:true  },
 };
 
-/* "11AM" "9am" "1:30PM" → 분(정렬용). 못 읽으면 큰 수(맨 끝). */
+/* "11AM" "9am" "1:30PM" "6.30PM" → 분(정렬용). 못 읽으면 큰 수(맨 끝).
+   분 구분자는 : 와 . 둘 다 허용 — 표시는 원문 그대로. */
 function timeToMinutes(t) {
-  const m = String(t).trim().toLowerCase().match(/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b/);
+  const m = String(t).trim().toLowerCase().match(/(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?m\b/);
   if (!m) return 99999;
   let h = (+m[1]) % 12;
   if (m[3] === 'p') h += 12;
@@ -153,7 +154,7 @@ function href(u) {
   return escapeAttr(s);
 }
 
-/* HTML 이스케이프 — 제목에 <,>,& 들어가도 안 깨지게. (현재 생성기엔 없던 구멍) */
+/* HTML 이스케이프 — 제목에 <,>,& 들어가도 안 깨지게. */
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -162,9 +163,23 @@ function escapeAttr(s) {
   return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
+/* #RGB/#RRGGBB → 상대휘도(0~1). 못 읽으면 0(어두운 것으로 간주). */
+function relLuminance(hex) {
+  let s = String(hex || '').trim().replace(/^#/, '');
+  if (s.length === 3) s = s.split('').map(c => c + c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(s)) return 0;
+  const lin = v => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * lin(parseInt(s.slice(0, 2), 16))
+       + 0.7152 * lin(parseInt(s.slice(2, 4), 16))
+       + 0.0722 * lin(parseInt(s.slice(4, 6), 16));
+}
+
 /* ── 본체 ───────────────────────────────────────────────────────────────
    인자:
-     members  : [{ id, name, bg, fg, url }]
+     members  : [{ id, name, bg, fg, url, img }]
      schedule : [{ day, time, mem, title, url }]   // mem = members[].id
      dates    : { 월:'06.15', ... }
      theme    : 아래 기본값 참고 (survive 포함)
@@ -172,31 +187,31 @@ function escapeAttr(s) {
 function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme = {} } = {}) {
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
-    collision:'좌우', radius:0, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1,
-    cardHeight:100, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:18,
+    collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
+    header:'', subtitle:'', logo:'', linkUnderline:false, fontScale:1,
+    cardHeight:104, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:12,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
   const S = { ...DEFAULT_SURVIVE, ...(t.survive || {}) };
   const M = Object.fromEntries(members.map(m => [m.id, m]));
   // 카드 비율(패딩·모서리)은 고정하고 "글씨"만 배율로 조정한다.
-  // fontScale은 텍스트 크기에만 곱하고 썸네일·패딩은 건드리지 않는다 → 카드 비율 유지.
   const base = SIZE[t.fontSize] || SIZE.보통;
   const sc = Math.max(0.6, Math.min(1.6, +t.fontScale || 1));
   const SZ = {};
   for (const k in base) SZ[k] = k === 'thumb' ? base[k] : Math.round(base[k] * sc * 10) / 10;
-  /* ── 카드 구역 치수 (사용자 스케치 기준) ──
+  /* ── 카드 구역 치수 ──
      ┌────────────────────────┐
      │ [③이름]      [④시간]  │ ← 헤더 구역: 높이 = nameFont×1.25, 폰트 고정(축소 없음)
-     │ [⑤제목      ] [②이미지]│ ← 본문 구역: 남는 높이 전부. 제목은 줄바꿈/한줄 선택
+     │ [⑤제목      ]          │ ← 본문 구역: 남는 높이 전부. 제목은 줄바꿈/한줄 선택
+     │              [②이미지]│ ← 아바타는 카드 우하단 모서리에 딱 붙음
      └────────────────────────┘
      각 구역은 overflow:hidden — 글자가 구역을 절대 못 넘음. 카드도 안 커짐. */
-  const CARD_PAD = 8, ZONE_GAP = 4;
+  const PAD_V = 8, PAD_H = 9, ZONE_GAP = 4;
   /* ③④는 변동성 없는 데이터(멤버 목록·시간 형식) → 이번 주 최장 이름·최장 시간을 미리 알 수 있다.
      nameFont가 0(자동)이면 "고정 내용이 전부 보이는 최대 폰트"를 계산한다.
-     열 내용폭: (740 - 바깥패딩28)/7 - 셀패딩8 - 카드패딩16 ≈ 77px */
-  const COL_CONTENT = Math.floor((740 - 28) / 7) - 8 - CARD_PAD * 2;
+     열 내용폭: (740 - 바깥패딩24)/7 - 셀패딩8 - 카드패딩18 ≈ 76px */
+  const COL_CONTENT = Math.floor((740 - 24) / 7) - 8 - PAD_H * 2;
   const timesSeen = schedule.map(s => String(formatTime(s.time, t.timeFmt)));
   const maxTimeLen = Math.max(3, ...timesSeen.map(s => s.length), 0);
   const namesSeen = members.filter(m => schedule.some(s => s.mem === m.id)).map(m => m.name);
@@ -204,43 +219,46 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
   // 폭 계수(Pretendard 볼드 실측): 한글 ≈ 0.93×F/자, 시간(숫자·영문·콜론) ≈ 0.56×F/자, 알약 좌우패딩 ≈ 0.7×F
   const autoF = Math.floor((COL_CONTENT - ZONE_GAP) / (maxNameLen * 0.93 + maxTimeLen * 0.56 + 0.72));
   const nameF = (+t.nameFont > 0) ? +t.nameFont : Math.max(9, Math.min(40, autoF)); // ③④ 고정(축소 없음)
-  const titleF = Math.max(8, Math.round((+t.titleFont || 18) * sc));                 // ⑤ (fontScale 적용)
+  const titleF = Math.max(8, Math.round((+t.titleFont || 12) * sc));                 // ⑤ (fontScale 적용)
   const pillW = Math.ceil(nameF * (maxTimeLen * 0.56 + 0.72)) + 2;                   // ④ 구역 = 딱 필요한 폭
   const nameZoneH = Math.round(nameF * 1.25);
   const cardH = (+t.cardHeight > 0) ? +t.cardHeight
-    : nameZoneH + Math.round(titleF * 2.6) + CARD_PAD * 2 + ZONE_GAP;
-  const titleZoneH = Math.max(0, cardH - CARD_PAD * 2 - nameZoneH - ZONE_GAP);
+    : nameZoneH + Math.round(titleF * 2.6) + PAD_V * 2 + ZONE_GAP;
+  const titleZoneH = Math.max(0, cardH - PAD_V * 2 - nameZoneH - ZONE_GAP);
   const fontStack = FONT[t.font] || FONT.Pretendard;
   const bg = BG[t.bg] || BG.흰색;
   const dark = bg.dark;
   const align = t.align === '가운데' ? 'center' : 'left';
   const radius = S.borderRadius ? (+t.radius || 0) : 0;
 
-  const headInk  = dark ? '#ECE8E1' : '#2A2724';
-  const dowBg    = dark ? 'rgba(255,255,255,0.12)' : '#ECEAE6';
-  const dowFg    = dark ? 'rgba(255,255,255,0.7)'  : '#7C766C';
-  const headLine = dark ? '#5A554E' : '#D9D4CB';
+  const headInk  = dark ? '#ECE8E1' : '#333333';
+  const dateInk  = dark ? '#ECE8E1' : '#444444';
+  const dowBg    = dark ? 'rgba(255,255,255,0.12)' : '#FFFFFF';
+  const dowFg    = dark ? 'rgba(255,255,255,0.7)'  : '#888888';
+  const headLine = dark ? '#8A857E' : '#555555';
   const pillBg   = dark ? '#F3F0EA' : '#FFFFFF';
-  const shadow   = S.boxShadow ? 'box-shadow:0 2px 5px rgba(0,0,0,.12);' : '';
-
-  const titleWrap = t.wrap === '말줄임'
-    ? 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
-    : 'overflow-wrap:break-word;word-break:keep-all;line-height:1.3';
+  const cardShadow = S.boxShadow ? 'box-shadow:0 3px 8px rgba(0,0,0,.13);' : '';
+  const softShadow = S.boxShadow ? 'box-shadow:0 1px 3px rgba(0,0,0,.06);' : '';
+  const badgeShadow = S.boxShadow ? 'box-shadow:0 1px 4px rgba(0,0,0,.08);' : '';
 
   const TIMES = [...new Set(schedule.map(s => s.time))].sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
 
-  /* 요일 헤더 */
+  /* 요일 헤더 행 (독립 테이블 — 아래 전폭 구분선을 긋기 위해 분리) */
   let head = '';
   for (const day of DAYS) {
-    const tone = DAY_TONE[day] || headInk;
+    const tone = DAY_TONE[day] || dateInk;
     head +=
-      `      <td style="padding:0 4px 12px;text-align:center;vertical-align:top">` +
+      `      <td style="padding:0 4px;text-align:center;vertical-align:top">` +
       `<span style="display:inline-block;background:${dowBg};color:${dowFg};` +
-      (radius ? `border-radius:13px;` : '') +
-      `padding:3px 11px;font-size:${SZ.dow}px;font-weight:600">${DOW[day]}</span>` +
+      (radius ? `border-radius:14px;` : '') +
+      `padding:4px 12px;font-size:${SZ.dow}px;font-weight:600;${softShadow}">${DOW[day]}</span>` +
       `<div style="font-size:${SZ.date}px;font-weight:800;color:${tone};margin-top:7px;letter-spacing:-0.5px">` +
       `${escapeHtml(dates[day] || '')}</div></td>\n`;
   }
+  const dayHeader =
+    `  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;table-layout:fixed">\n` +
+    `    <tbody><tr>\n${head}    </tr></tbody>\n  </table>\n` +
+    `  <div style="border-bottom:2px solid ${headLine};margin:10px 0 14px"></div>\n`;
 
   /* 카드 1장.
      스파이크 1차: 카드는 <div>(배경/모서리/그림자 보존). 클릭 링크는 카드 안의
@@ -260,20 +278,15 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
       ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg}">${inner}</a>`
       : inner;
 
-    /* ④ 시간 알약 — 폰트 고정(nameF), 구역 안에서 클립 */
+    /* ④ 시간 알약 — 흰 배경, 글자색 = 카드 배경색(밝은 배경이면 fg). 폰트 고정(nameF). */
+    const pillFg = S.bgColor ? (relLuminance(m.bg) > 0.7 ? m.fg : m.bg) : '#2A2724';
     const pill =
-      `<span style="display:inline-block;background:${pillBg};color:#2A2724;` +
+      `<span style="display:inline-block;background:${pillBg};color:${pillFg};` +
       (radius ? `border-radius:${Math.round(nameZoneH / 2)}px;` : '') +
       `padding:0 ${Math.round(nameF * 0.35)}px;font-size:${nameF}px;line-height:${nameZoneH}px;` +
       `font-weight:800;white-space:nowrap">${timeTxt}</span>`;
     /* ③ 이름 — 폰트 고정(nameF), nowrap, 구역 밖으로 못 나감 */
     const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
-    /* 헤더 구역: 이름 좌 / 시간 우. table-layout:fixed + overflow:hidden = 구역 침범 불가 */
-    const headerZone =
-      `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
-      `<td style="padding:0;vertical-align:top"><div style="height:${nameZoneH}px;overflow:hidden;text-align:left;white-space:nowrap">${link(nameHtml)}</div></td>` +
-      `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${pillW}px"><div style="height:${nameZoneH}px;overflow:hidden;text-align:right;white-space:nowrap">${pill}</div></td>` +
-      `</tr></table>`;
 
     /* ⑤ 제목 구역 — 줄바꿈 선택: '자동'=여러 줄(구역 안에서), '말줄임'=한 줄(…) */
     const wrapCss = t.wrap === '말줄임'
@@ -282,25 +295,52 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
     const titleInner = c.title
       ? link(`<span style="font-size:${titleF}px;line-height:1.25;color:${m.fg}">${escapeHtml(c.title)}</span>`)
       : '';
-    /* ② 아바타 구역 — 제목 구역 오른쪽 정사각. 제목이 최소 60% 폭을 갖도록 폭 상한(40%). */
-    const avS = Math.min(titleZoneH, Math.round(COL_CONTENT * 0.4));
-    const avatar = img
-      ? `<img src="${escapeAttr(img)}" alt="" style="width:${avS}px;height:${avS}px;object-fit:cover;${radius ? `border-radius:${Math.min(8, radius)}px;` : ''}display:block">`
-      : '';
-    const bodyZone = avatar
-      ? `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
-        `<td style="padding:0;vertical-align:top"><div style="height:${titleZoneH}px;overflow:hidden;text-align:${align};${wrapCss}">${titleInner}</div></td>` +
-        `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${avS + ZONE_GAP}px">${avatar}</td>` +
-        `</tr></table>`
-      : `<div style="height:${titleZoneH}px;overflow:hidden;text-align:${align};${wrapCss}">${titleInner}</div>`;
 
-    const body = headerZone + `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` + bodyZone;
+    /* 구역 div에 font-size·line-height를 박아 넣는다 — 안 하면 inline <a>의 스트럿이
+       기본 16px 폰트를 상속해 줄박스가 구역보다 커지고 글자가 잘린다(실측). */
+    const nameZone = `height:${nameZoneH}px;overflow:hidden;white-space:nowrap;font-size:${nameF}px;line-height:${nameZoneH}px`;
+    const titleZone = h => `height:${h}px;overflow:hidden;text-align:${align};${wrapCss};font-size:${titleF}px;line-height:1.25`;
+
+    let body;
+    if (narrow) {
+      /* 충돌(반폭) 카드: 세로 스택 — 이름(위) / 제목 / 시간알약(맨 아래 왼쪽). 아바타 생략. */
+      const nTitleH = Math.max(0, cardH - PAD_V * 2 - nameZoneH * 2 - ZONE_GAP * 2);
+      body =
+        `<div style="${nameZone};text-align:left">${link(nameHtml)}</div>` +
+        `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` +
+        `<div style="${titleZone(nTitleH)}">${titleInner}</div>` +
+        `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` +
+        `<div style="${nameZone};text-align:left">${pill}</div>`;
+    } else {
+      /* 헤더 구역: 이름 좌 / 시간 우. table-layout:fixed + overflow:hidden = 구역 침범 불가 */
+      const headerZone =
+        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
+        `<td style="padding:0;vertical-align:top"><div style="${nameZone};text-align:left">${link(nameHtml)}</div></td>` +
+        `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${pillW}px"><div style="${nameZone};text-align:right">${pill}</div></td>` +
+        `</tr></table>`;
+      /* ② 아바타 구역 — 카드 우하단 모서리에 딱 붙게.
+         위 여백(margin-top)으로 바닥까지 밀고, 고정폭 td보다 이미지가 커서 오른쪽으로
+         PAD_H만큼 삐져나감 → 카드 패딩을 먹고 모서리에 밀착. 카드 overflow:hidden이 클립. */
+      const avS = Math.min(titleZoneH, Math.round(COL_CONTENT * 0.42));
+      const avatar = img
+        ? `<img src="${escapeAttr(img)}" alt="" style="width:${avS}px;height:${avS}px;object-fit:cover;` +
+          (radius ? `border-radius:10px;` : '') +
+          `display:block;margin:${titleZoneH - avS + PAD_V}px 0 0 0">`
+        : '';
+      const bodyZone = avatar
+        ? `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
+          `<td style="padding:0;vertical-align:top"><div style="${titleZone(titleZoneH)}">${titleInner}</div></td>` +
+          `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${Math.max(0, avS - PAD_H) + ZONE_GAP}px">${avatar}</td>` +
+          `</tr></table>`
+        : `<div style="${titleZone(titleZoneH)}">${titleInner}</div>`;
+      body = headerZone + `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` + bodyZone;
+    }
 
     // 카드: 고정 높이·고정 구역. 내용이 없어도 크기 유지, 많아도 안 커짐(구역에서 클립).
     const style =
       `background:${cardBg};` +
       (radius ? `border-radius:${radius}px;` : '') +
-      `padding:${CARD_PAD}px;${shadow}box-sizing:border-box;` +
+      `padding:${PAD_V}px ${PAD_H}px;${cardShadow}box-sizing:border-box;` +
       `height:${cardH}px;overflow:hidden;` +
       (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 
@@ -324,36 +364,39 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
       } else {
         inner = es.map((c, i) => `<div style="${i ? 'margin-top:6px' : ''}">${card(c)}</div>`).join('');
       }
-      rows += `      <td style="padding:5px 4px;vertical-align:top">${inner}</td>\n`;
+      rows += `      <td style="padding:6px 4px;vertical-align:top">${inner}</td>\n`;
     }
     rows += `    </tr>\n`;
   }
 
-  /* 상단 헤더(제목 + 배지) */
-  let topHeader = '';
-  if (t.header || t.subtitle) {
-    const emS = SZ.big + 14;
-    const emblem = (S.inlineImg && t.logo && /^https?:\/\//i.test(t.logo))
-      ? `<img src="${escapeAttr(t.logo)}" alt="" style="width:${emS}px;height:${emS}px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:10px">`
-      : '';
-    const titleTxt = t.header
-      ? `${emblem}<b style="font-size:${SZ.big}px;color:${headInk};vertical-align:middle">${escapeHtml(t.header)}</b>`
-      : '';
-    const badge = t.subtitle
-      ? `<span style="display:inline-block;background:#FF5A5A;color:#fff;${radius ? 'border-radius:18px;' : ''}padding:6px 14px;font-size:${SZ.dow + 1}px;font-weight:700">📢 ${escapeHtml(t.subtitle)}</span>`
-      : '';
-    topHeader =
-      `  <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:10px"><tr>` +
-      `<td style="padding:0;text-align:left;vertical-align:middle">${titleTxt}</td>` +
-      `<td style="padding:0;text-align:right;vertical-align:middle">${badge}</td></tr></table>\n` +
-      `  <div style="border-bottom:2px solid ${headLine};margin-bottom:14px"></div>\n`;
-  }
+  /* 상단 헤더(로고 + 제목 + 날짜범위 + 배지) — 항상 표시. */
+  const headerTxt = String(t.header || '').trim() || '주간 스케줄표';
+  const range = (dates.월 && dates.일) ? ` (${escapeHtml(dates.월)} – ${escapeHtml(dates.일)})` : '';
+  const emblem = (S.inlineImg && t.logo && /^https?:\/\//i.test(t.logo))
+    ? `<img src="${escapeAttr(t.logo)}" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:10px">`
+    : '';
+  const titleTxt =
+    `${emblem}<b style="font-size:21px;font-weight:800;color:${headInk};vertical-align:middle;letter-spacing:-0.5px">` +
+    `${escapeHtml(headerTxt)}${range}</b>`;
+  const badge = t.subtitle
+    ? `<span style="display:inline-block;background:#FFFFFF;` +
+      (radius ? 'border-radius:18px;' : '') +
+      `padding:7px 14px;${badgeShadow}white-space:nowrap">` +
+      `<span style="display:inline-block;width:14px;height:14px;` +
+      (radius ? 'border-radius:50%;' : '') +
+      `background:#EB5757;text-align:center;font-size:9px;line-height:14px;vertical-align:middle">📢</span>` +
+      `<span style="font-size:12px;font-weight:600;color:#444444;vertical-align:middle;margin-left:6px">${escapeHtml(t.subtitle)}</span></span>`
+    : '';
+  const topHeader =
+    `  <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin-bottom:16px"><tr>` +
+    `<td style="padding:0;text-align:left;vertical-align:middle">${titleTxt}</td>` +
+    `<td style="padding:0;text-align:right;vertical-align:middle">${badge}</td></tr></table>\n`;
 
   const table =
     `  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;table-layout:fixed">\n` +
-    `    <tbody>\n    <tr>\n${head}    </tr>\n${rows}    </tbody>\n  </table>`;
+    `    <tbody>\n${rows}    </tbody>\n  </table>`;
 
-  return `<div style="font-family:${fontStack};background:${bg.paper};color:${headInk};padding:16px 14px;max-width:740px">\n${topHeader}${table}\n</div>`;
+  return `<div style="font-family:${fontStack};background:${bg.paper};color:${headInk};padding:16px 12px;max-width:740px">\n${topHeader}${dayHeader}${table}\n</div>`;
 }
 
 /* ───── src/sheet.js (인라인, 구글시트 연동) ───── */
@@ -551,7 +594,7 @@ async function loadConfigTab(sheetIdOrUrl) {
 }
 
 /* ───── 기본 데이터 (data/*.csv에서 빌드시 주입) ───── */
-const DEFAULT_MEMBERS_CSV = "id,멤버,배경색,글자색,기본URL\nchoiaeri,최애리,#F2A93B,#3A2A00,\nyeowooyeon,여우연,#8AB4F8,#0A2A6B,\nnano,나노,#B7BBC0,#202124,\nnunyo,눈요,#7FD6EB,#063B4A,\nseolhong,설홍,#FF5A5A,#FFFFFF,\nruchel,루첼,#4A4A4A,#FFFFFF,\nbayblue,베이블루,#3A56C5,#FFFFFF,\n";
+const DEFAULT_MEMBERS_CSV = "id,멤버,배경색,글자색,기본URL\nchoiaeri,최애리,#F2A93B,#FFFFFF,\nyeowooyeon,여우연,#8AB4F8,#FFFFFF,\nnano,나노,#B7BBC0,#202124,\nnunyo,눈요,#7FD6EB,#FFFFFF,\nseolhong,설홍,#FF5A5A,#FFFFFF,\nruchel,루첼,#4A4A4A,#FFFFFF,\nbayblue,베이블루,#3A56C5,#FFFFFF,\n";
 const DEFAULT_SCHEDULE_CSV = "요일,날짜,시간,멤버,제목,URL\n월,06.15,9AM,choiaeri,♥아침 뉴스♥,\n월,06.15,11AM,yeowooyeon,소소한 소통,\n월,06.15,12PM,nano,카페유머글,\n월,06.15,2PM,nunyo,동요 방송,\n월,06.15,2PM,seolhong,기생수 같이보기,\n월,06.15,7PM,ruchel,니케 스토리 21지 부터,\n화,06.16,9PM,seolhong,후열 롤,\n수,06.17,9AM,choiaeri,♥아침 뉴스♥,\n수,06.17,4PM,yeowooyeon,콘서트 전 마지막 방송..!!,\n수,06.17,7PM,nano,영풍트럭운전,\n수,06.17,7PM,ruchel,증명의 날,\n목,06.18,9AM,choiaeri,♥아침 뉴스♥,\n목,06.18,2PM,seolhong,똥겜핀볼,\n목,06.18,6PM,nunyo,소통 스플릿픽션 w.루첼,\n목,06.18,7PM,ruchel,눈요랑 스플릿픽션,\n목,06.18,8PM,yeowooyeon,여우연 콘서트 FOXLOG : 우리의 기록,\n금,06.19,8AM,nano,아침노래방/월드컵응원방,\n금,06.19,8AM,ruchel,월드컵 응원,\n금,06.19,9AM,choiaeri,♥아침 뉴스♥,\n금,06.19,10AM,seolhong,축구월드컵 입중계,\n금,06.19,4PM,yeowooyeon,콘서트 후열 회식 주루마블!,\n금,06.19,6PM,nunyo,괴식 마추기,\n토,06.20,2PM,seolhong,애교데이 리턴즈!,\n토,06.20,4PM,yeowooyeon,니케 푹먹 데이,\n토,06.20,6PM,nunyo,블루아카이브 스토리,\n일,06.21,12PM,nano,레데리2,\n일,06.21,2PM,seolhong,너목(木)보 대회 시상,\n일,06.21,4PM,yeowooyeon,애교데이,\n일,06.21,6PM,nunyo,동화요정,\n일,06.21,7PM,ruchel,야랄소통,\n";
 /* ───── src/ui.js (인라인) ───── */
 /* ui.js — v2 (기획서-v2.md).
@@ -592,14 +635,14 @@ function fallbackMembers() {
 }
 const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
-  fontSize: '보통', fontScale: 1, cardHeight: 100, nameFont: 0, titleFont: 18, radius: 0,
-  bg: '흰색', linkUnderline: true, collision: '좌우', align: '왼쪽',
-  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
+  fontSize: '보통', fontScale: 1, cardHeight: 104, nameFont: 0, titleFont: 12, radius: 16,
+  bg: '흰색', linkUnderline: false, collision: '좌우', align: '왼쪽',
+  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', pv: 1, // pv = 포스터 룩 버전(캐시 마이그레이션용)
 };
 const PRESETS = {
-  '직사각형(기본)': { radius: 0, cardHeight: 100, nameFont: 0, titleFont: 18 },
-  '둥근 포스터':    { radius: 16, cardHeight: 100, nameFont: 0, titleFont: 18 },
-  '컴팩트':         { radius: 0, cardHeight: 64, nameFont: 0, titleFont: 12 },
+  '둥근 포스터(기본)': { radius: 16, cardHeight: 104, nameFont: 0, titleFont: 12 },
+  '직사각형':          { radius: 0, cardHeight: 100, nameFont: 0, titleFont: 18 },
+  '컴팩트':            { radius: 0, cardHeight: 64, nameFont: 0, titleFont: 12 },
 };
 
 /* ── 상태 ──
@@ -613,6 +656,13 @@ function boot() {
   // 구역제 레이아웃 이전 캐시(nameFont 없음)는 카드 치수를 새 기본값으로 올림
   const cachedTheme = cached.theme || {};
   if (cachedTheme.nameFont == null) { delete cachedTheme.cardHeight; delete cachedTheme.pillPos; }
+  // 포스터 룩(pv:1) 이전 캐시: 비주얼 키를 지워 새 기본값(둥근 포스터)을 받게 함
+  if ((cachedTheme.pv || 0) < THEME_DEFAULT.pv) {
+    for (const k of ['cardHeight', 'radius', 'titleFont', 'linkUnderline']) delete cachedTheme[k];
+    // 폴백 멤버 글자색도 옛 캐시(어두운 fg)면 새 기본으로 — 시트 members 탭이 있으면 어차피 시트가 이김
+    if (cached.membersSource !== 'sheet' && Array.isArray(cached.members)) delete cached.members;
+    cachedTheme.pv = THEME_DEFAULT.pv;
+  }
   return {
     members: cached.members && cached.members.length ? cached.members : fallbackMembers(),
     membersSource: cached.membersSource === 'sheet' ? 'cache' : 'default',
