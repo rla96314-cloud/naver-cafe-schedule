@@ -93,6 +93,19 @@ export function normalizeImgUrl(u) {
   return s;
 }
 
+/* ── 네이버 렌더 시뮬레이션 ──
+   미리보기/PNG가 "붙여넣은 뒤 실제 모습"과 같아지도록, 네이버가 하는 일을 미리 적용한다:
+   ① 새니타이저가 제거하는 스타일 삭제(overflow:hidden, word-break, overflow-wrap — 실측)
+   ② 네이버엔 Pretendard 폰트가 없음 → 폰트 스택에서 빼서 시스템 폰트로 렌더되게. */
+export function simulateNaver(html) {
+  return String(html)
+    .replace(/overflow:hidden;?/g, '')
+    .replace(/word-break:[^;"']+;?/g, '')
+    .replace(/overflow-wrap:[^;"']+;?/g, '')
+    .replace(/text-overflow:[^;"']+;?/g, '')
+    .replace(/'Pretendard',\s*/g, '');
+}
+
 /* ── 생성 시점 글자 맞춤 ──
    ★네이버가 overflow:hidden을 제거함(실제 대문 실측 2026-07-06: 제목이 카드 밖으로 흘러나옴).
    → 구역 클립에 의존하지 말고, 폭·줄수를 계산해 생성 단계에서 잘라낸다(줄은 <br>로 확정).

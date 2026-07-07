@@ -186,6 +186,19 @@ function normalizeImgUrl(u) {
   return s;
 }
 
+/* ── 네이버 렌더 시뮬레이션 ──
+   미리보기/PNG가 "붙여넣은 뒤 실제 모습"과 같아지도록, 네이버가 하는 일을 미리 적용한다:
+   ① 새니타이저가 제거하는 스타일 삭제(overflow:hidden, word-break, overflow-wrap — 실측)
+   ② 네이버엔 Pretendard 폰트가 없음 → 폰트 스택에서 빼서 시스템 폰트로 렌더되게. */
+function simulateNaver(html) {
+  return String(html)
+    .replace(/overflow:hidden;?/g, '')
+    .replace(/word-break:[^;"']+;?/g, '')
+    .replace(/overflow-wrap:[^;"']+;?/g, '')
+    .replace(/text-overflow:[^;"']+;?/g, '')
+    .replace(/'Pretendard',\s*/g, '');
+}
+
 /* ── 생성 시점 글자 맞춤 ──
    ★네이버가 overflow:hidden을 제거함(실제 대문 실측 2026-07-06: 제목이 카드 밖으로 흘러나옴).
    → 구역 클립에 의존하지 말고, 폭·줄수를 계산해 생성 단계에서 잘라낸다(줄은 <br>로 확정).
@@ -986,7 +999,7 @@ async function exportPNG(btn) {
   const orig = btn.textContent;
   btn.textContent = '만드는 중…'; btn.disabled = true;
   const host = el('div', { style: 'position:fixed;left:-10000px;top:0;width:740px;background:#EFEFEF' });
-  host.innerHTML = fittedHTML();
+  host.innerHTML = simulateNaver(fittedHTML()); // 미리보기·PNG = 네이버 실제 모습
   document.body.append(host);
   try {
     await new Promise(r => setTimeout(r, 400)); // 이미지 로드 여유
@@ -1016,7 +1029,7 @@ function onCopy() {
 function refreshPreview() {
   const host = $('#pv-render');
   if (host) {
-    host.innerHTML = genHTML();
+    host.innerHTML = simulateNaver(genHTML());
     if (S.selId) { const c = host.querySelector(`[data-eid="${S.selId}"]`); if (c) c.style.outline = `2.5px solid ${C.accent}`; }
   }
   const wb = $('#warn-box'); if (wb) paintWarnings(wb);
@@ -1133,7 +1146,7 @@ function addEntry() {
 }
 
 function mainView() {
-  const html = genHTML();
+  const html = simulateNaver(genHTML()); // 미리보기 = 네이버에서 보이는 그대로(시스템 폰트·필터 반영)
   const links = (html.match(/<a href=/g) || []).length;
   const wrap = el('div', { style: 'flex:1;min-height:0;display:flex;flex-direction:column' });
   const body = el('div', { style: 'flex:1;overflow-y:auto;padding:16px 22px' });
@@ -1153,7 +1166,7 @@ function mainView() {
   const scale = 0.795; // 740 → 588px 표시
   body.append(
     el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin:2px 2px 8px' }, [
-      el('div', { style: 'font-size:12.5px;font-weight:700' }, ['대문 미리보기 ', el('span', { style: 'font-weight:500;color:var(--sub)' }, '= 붙여넣을 결과 · 카드 클릭 = 수정')]),
+      el('div', { style: 'font-size:12.5px;font-weight:700' }, ['대문 미리보기 ', el('span', { style: 'font-weight:500;color:var(--sub)' }, '= 네이버에서 보이는 그대로 · 카드 클릭 = 수정')]),
       el('span', { style: 'font-size:11px;font-weight:700;color:var(--accent);background:rgba(192,67,42,.1);padding:3px 9px;border-radius:20px' }, `링크 ${links} · 방송 ${curWeek().schedule.length}`),
     ]),
     el('div', { style: `border:1px solid var(--hair);border-radius:10px;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.07);width:${Math.round(740 * scale) + 2}px;background:#fff` }, [
