@@ -333,8 +333,13 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
         `</tr></table>`;
       /* ② 아바타 — 제목 구역 오른쪽 하단 정렬. 카드 클립에 의존하지 않게 완전히 안쪽에 배치
          (overflow 제거돼도 카드 밖으로 안 나감). */
+      /* 드라이브(lh3) 이미지는 서버 크롭(=wW-hH-c)으로 딱 맞는 비율을 받는다 — CSS(object-fit)에
+         의존하면 PNG 렌더러·네이버에서 짜부될 수 있음(실측). 그 외 호스트만 object-fit 폴백. */
+      const avSrc = /lh3\.googleusercontent\.com/.test(img)
+        ? `${img.split('=')[0]}=w${avS * 2}-h${titleZoneH * 2}-c`
+        : img;
       const avatar = avS
-        ? `<img src="${escapeAttr(img)}" alt="" style="width:${avS}px;height:${titleZoneH}px;object-fit:cover;` +
+        ? `<img src="${escapeAttr(avSrc)}" alt="" style="width:${avS}px;height:${titleZoneH}px;object-fit:cover;` +
           (radius ? `border-radius:8px;` : '') +
           `display:block">`
         : '';
