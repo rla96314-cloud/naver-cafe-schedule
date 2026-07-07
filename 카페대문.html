@@ -764,7 +764,12 @@ let S = boot();
 function boot() {
   const cached = (() => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; } })();
   const weeks = (Array.isArray(cached.weeks) && cached.weeks.length)
-    ? cached.weeks.map(w => ({ ...w, dirty: false }))
+    ? cached.weeks.map(w => {
+        // 캐시 복구: 이름으로 발견된 주가 name 없이 저장된 옛 버그 — 라벨(0706 ~ 0712)에서 이름 복원
+        let name = w.name || null;
+        if (!w.gid && !name) { const m = String(w.label || '').match(/^(\d{4})/); if (m) name = m[1]; }
+        return { ...w, name, dirty: false };
+      })
     : DEFAULT_SHEET_TABS.map(t => ({ gid: String(t.gid), label: t.label, weekStart: '', schedule: [], loaded: false, dirty: false }));
   // 구역제 레이아웃 이전 캐시(nameFont 없음)는 카드 치수를 새 기본값으로 올림
   const cachedTheme = cached.theme || {};
@@ -791,7 +796,7 @@ function save() {
   try {
     localStorage.setItem(STORE, JSON.stringify({
       members: S.members, membersSource: S.membersSource, theme: S.theme,
-      weeks: S.weeks.map(w => ({ gid: w.gid, label: w.label, weekStart: w.weekStart, schedule: w.schedule, loaded: w.loaded })),
+      weeks: S.weeks.map(w => ({ gid: w.gid, name: w.name || null, label: w.label, weekStart: w.weekStart, schedule: w.schedule, loaded: w.loaded })),
       weekIdx: S.weekIdx, sheetId: S.sheetId,
     }));
   } catch {}
@@ -827,11 +832,12 @@ function computeWarnings() {
 }
 
 /* ── 시트 동기화 (무상태의 심장) ── */
-/* 주 로드: gid 또는 탭 이름(name) 어느 쪽으로든. */
+/* 주 로드: gid 또는 탭 이름(name) 어느 쪽으로든. 둘 다 없으면(깨진 캐시) 로드하지 않음
+   — gid 없이 loadWeekFromSheet를 부르면 gid=0(첫 탭)으로 폴백해 엉뚱한 데이터를 덮어쓴다. */
 function fetchWeek(w) {
-  return w.name
-    ? loadWeekByName(S.sheetId, w.name, S.members)
-    : loadWeekFromSheet(w.gid, S.members, S.sheetId);
+  if (w.name) return loadWeekByName(S.sheetId, w.name, S.members);
+  if (w.gid) return loadWeekFromSheet(w.gid, S.members, S.sheetId);
+  return Promise.reject(new Error('참조 없는 주'));
 }
 /* 새 주차 탭 자동 발견 — 마지막 주 다음 월요일부터 탭 이름(MMDD)으로 프로브. */
 async function discoverAndAppend(probe) {
