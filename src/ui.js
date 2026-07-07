@@ -441,6 +441,18 @@ function slider(value, min, max, step, fmt, onInput) {
   return el('div', { style: 'display:flex;align-items:center;gap:10px;flex:1' }, [range, lbl]);
 }
 /* members 탭을 시트에 만들 때 붙여넣을 TSV(탭 구분 → 시트가 열로 쪼갬). */
+/* config 탭용 [키|값] TSV — "지금 설정을 기본값으로": 시트에 붙이면 운영진 전원의 기본값이 됨. */
+function configTSV() {
+  const t = S.theme;
+  const rows = [
+    ['헤더', t.header || ''], ['배지', t.subtitle || ''], ['로고', t.logo || ''],
+    ['카드높이', t.cardHeight], ['모서리', t.radius],
+    ['이름폰트', t.nameFont || 0], ['제목폰트', t.titleFont],
+    ['링크밑줄', t.linkUnderline ? '표시' : '없음'], ['배경', t.bg],
+    ['시간표기', t.timeFmt], ['제목줄바꿈', t.wrap], ['정렬', t.align],
+  ];
+  return rows.map(r => r.join('\t')).join('\n');
+}
 function membersTSV() {
   const rows = [['멤버', '배경색', '글자색', '채널URL', '이미지URL']];
   for (const m of S.members) rows.push([m.name, m.bg, m.fg, m.url || '', m.img || '']);
@@ -508,13 +520,20 @@ function settingsView() {
       row('폰트', seg(S.theme.font, ['Pretendard', '나눔고딕', '검은고딕'].map(v => ({ v, label: v })), v => { S.theme.font = v; save(); render(); })),
     ]),
   ]);
-  wrap.append(section('테마 — 시트 config 탭(헤더/배지/로고)이 있으면 그 값이 우선', [
+  const copyCfgBtn = el('button', { style: btn, onclick: () => {
+    navigator.clipboard && navigator.clipboard.writeText(configTSV());
+    copyCfgBtn.textContent = '복사됨 ✓'; setTimeout(() => copyCfgBtn.textContent = '지금 설정을 기본값으로 (config 탭용 표 복사)', 1500);
+  } }, '지금 설정을 기본값으로 (config 탭용 표 복사)');
+  wrap.append(section('테마 — 시트 config 탭이 있으면 그 값이 전원의 기본값', [
     el('div', { style: 'display:flex;gap:8px' }, presetBtns), adv,
+    el('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:4px' }, [
+      copyCfgBtn,
+      el('span', { style: 'font-size:11.5px;color:var(--sub)' }, '→ 시트에 "config" 탭을 만들고 A1에 붙여넣기 — 누가 열어도 이 설정으로 시작돼요.'),
+    ]),
   ]));
 
   wrap.append(el('div', { style: 'margin-top:14px;font-size:11.5px;color:var(--sub);line-height:1.6' },
-    '참고: 업로드/data: 이미지는 네이버가 지워요 — 이미지·로고는 외부 https 주소만. ' +
-    '시트 config 탭은 [헤더|주간 스케줄표], [배지|…], [로고|https…] 형식의 2열 행이에요.'));
+    '참고: 업로드/data: 이미지는 네이버가 지워요 — 이미지·로고는 외부 https 주소만.'));
   return wrap;
 
   function section(title, kids) {

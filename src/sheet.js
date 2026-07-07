@@ -178,15 +178,27 @@ export async function loadMembersTab(sheetIdOrUrl) {
 }
 
 /* config 탭: [키 | 값] 행. 키: 헤더 / 배지 / 로고. 없어도 됨. */
-const CONFIG_KEYS = { 헤더: 'header', 배지: 'subtitle', 로고: 'logo' };
+/* config 탭 키 ↔ 테마 키. num=숫자, bool='표시/없음' → true/false. 시트 값이 곧 전원의 기본값. */
+export const CONFIG_KEYS = {
+  헤더: { k: 'header' }, 배지: { k: 'subtitle' }, 로고: { k: 'logo' },
+  카드높이: { k: 'cardHeight', num: 1 }, 모서리: { k: 'radius', num: 1 },
+  이름폰트: { k: 'nameFont', num: 1 }, 제목폰트: { k: 'titleFont', num: 1 },
+  링크밑줄: { k: 'linkUnderline', bool: 1 }, 배경: { k: 'bg' },
+  시간표기: { k: 'timeFmt' }, 제목줄바꿈: { k: 'wrap' }, 정렬: { k: 'align' },
+};
 export async function loadConfigTab(sheetIdOrUrl) {
   const sheetId = parseSheetRef(sheetIdOrUrl).sheetId;
   const resp = await gvizFetch(sheetId, { name: 'config' });
   if (!resp || resp.status !== 'ok') throw new Error('config 탭 없음');
   const out = {};
   for (const row of gridFromResp(resp)) {
-    const k = CONFIG_KEYS[(row[0] || '').trim()];
-    if (k) out[k] = (row[1] || '').trim();
+    const spec = CONFIG_KEYS[(row[0] || '').trim()];
+    if (!spec) continue;
+    const v = (row[1] || '').trim();
+    if (v === '') continue;
+    if (spec.num) { const n = parseFloat(v); if (!isNaN(n)) out[spec.k] = n; }
+    else if (spec.bool) out[spec.k] = (v === '표시' || v === 'true' || v === 'on');
+    else out[spec.k] = v;
   }
   return out;
 }
