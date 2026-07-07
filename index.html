@@ -200,7 +200,7 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
     header:'', subtitle:'', logo:'', linkUnderline:false, fontScale:1,
-    cardHeight:104, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:12,
+    cardHeight:60, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:12,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -218,7 +218,8 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
      │              [②이미지]│ ← 아바타는 카드 우하단 모서리에 딱 붙음
      └────────────────────────┘
      각 구역은 overflow:hidden — 글자가 구역을 절대 못 넘음. 카드도 안 커짐. */
-  const PAD_V = 8, PAD_H = 9, ZONE_GAP = 4;
+  // 레퍼런스(1600px)를 740px로 환산한 비율: 카드 ≈ 1.6:1 가로형, 패딩 ≈ 폭의 6%
+  const PAD_V = 5, PAD_H = 6, ZONE_GAP = 3;
   /* ③④는 변동성 없는 데이터(멤버 목록·시간 형식) → 이번 주 최장 이름·최장 시간을 미리 알 수 있다.
      nameFont가 0(자동)이면 "고정 내용이 전부 보이는 최대 폰트"를 계산한다.
      열 내용폭: (740 - 바깥패딩24)/7 - 셀패딩8 - 카드패딩18 ≈ 76px */
@@ -228,10 +229,13 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
   const namesSeen = members.filter(m => schedule.some(s => s.mem === m.id)).map(m => m.name);
   const maxNameLen = Math.max(2, ...namesSeen.map(n => n.length), 0);
   // 폭 계수(Pretendard 볼드 실측): 한글 ≈ 0.93×F/자, 시간(숫자·영문·콜론) ≈ 0.56×F/자, 알약 좌우패딩 ≈ 0.7×F
-  const autoF = Math.floor((COL_CONTENT - ZONE_GAP) / (maxNameLen * 0.93 + maxTimeLen * 0.56 + 0.72));
-  const nameF = (+t.nameFont > 0) ? +t.nameFont : Math.max(9, Math.min(40, autoF)); // ③④ 고정(축소 없음)
-  const titleF = Math.max(8, Math.round((+t.titleFont || 12) * sc));                 // ⑤ (fontScale 적용)
-  const pillW = Math.ceil(nameF * (maxTimeLen * 0.56 + 0.72)) + 2;                   // ④ 구역 = 딱 필요한 폭
+  // 레퍼런스 비율: 알약 폰트 = 이름의 0.8배 → 이름이 더 크게 나올 수 있음.
+  const PILL_R = 0.8;
+  const autoF = Math.floor((COL_CONTENT - ZONE_GAP) / (maxNameLen * 0.93 + PILL_R * (maxTimeLen * 0.56 + 0.72)));
+  const nameF = (+t.nameFont > 0) ? +t.nameFont : Math.max(9, Math.min(40, autoF)); // ③ 고정(축소 없음)
+  const pillF = Math.max(8, Math.round(nameF * PILL_R));                              // ④ 이름의 0.8배
+  const titleF = Math.max(8, Math.round((+t.titleFont || 12) * sc));                  // ⑤ (fontScale 적용)
+  const pillW = Math.ceil(pillF * (maxTimeLen * 0.56 + 0.9)) + 2;                     // ④ 구역 = 딱 필요한 폭
   const nameZoneH = Math.round(nameF * 1.25);
   const cardH = (+t.cardHeight > 0) ? +t.cardHeight
     : nameZoneH + Math.round(titleF * 2.6) + PAD_V * 2 + ZONE_GAP;
@@ -295,7 +299,7 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
     const pill =
       `<span style="display:inline-block;background:${pillBg};color:${pillFg};` +
       (radius ? `border-radius:${Math.round(nameZoneH / 2)}px;` : '') +
-      `padding:0 ${Math.round(nameF * 0.35)}px;font-size:${nameF}px;line-height:${nameZoneH}px;` +
+      `padding:0 ${Math.round(pillF * 0.45)}px;font-size:${pillF}px;line-height:${nameZoneH}px;` +
       `font-weight:800;white-space:nowrap">${timeTxt}</span>`;
     /* ③ 이름 — 폰트 고정(nameF), nowrap, 구역 밖으로 못 나감 */
     const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
@@ -658,14 +662,14 @@ function fallbackMembers() {
 }
 const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
-  fontSize: '보통', fontScale: 1, cardHeight: 104, nameFont: 0, titleFont: 12, radius: 16,
+  fontSize: '보통', fontScale: 1, cardHeight: 60, nameFont: 0, titleFont: 12, radius: 16,
   bg: '흰색', linkUnderline: false, collision: '좌우', align: '왼쪽',
-  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', pv: 1, // pv = 포스터 룩 버전(캐시 마이그레이션용)
+  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', pv: 2, // pv = 포스터 룩 버전(캐시 마이그레이션용)
 };
 const PRESETS = {
-  '둥근 포스터(기본)': { radius: 16, cardHeight: 104, nameFont: 0, titleFont: 12 },
-  '직사각형':          { radius: 0, cardHeight: 100, nameFont: 0, titleFont: 18 },
-  '컴팩트':            { radius: 0, cardHeight: 64, nameFont: 0, titleFont: 12 },
+  '둥근 포스터(기본)': { radius: 16, cardHeight: 60, nameFont: 0, titleFont: 12 },
+  '직사각형':          { radius: 0, cardHeight: 60, nameFont: 0, titleFont: 14 },
+  '넉넉하게':          { radius: 16, cardHeight: 84, nameFont: 0, titleFont: 13 },
 };
 
 /* ── 상태 ──

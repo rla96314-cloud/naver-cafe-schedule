@@ -36,14 +36,14 @@ function fallbackMembers() {
 }
 const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
-  fontSize: '보통', fontScale: 1, cardHeight: 104, nameFont: 0, titleFont: 12, radius: 16,
+  fontSize: '보통', fontScale: 1, cardHeight: 60, nameFont: 0, titleFont: 12, radius: 16,
   bg: '흰색', linkUnderline: false, collision: '좌우', align: '왼쪽',
-  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', pv: 1, // pv = 포스터 룩 버전(캐시 마이그레이션용)
+  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', pv: 2, // pv = 포스터 룩 버전(캐시 마이그레이션용)
 };
 const PRESETS = {
-  '둥근 포스터(기본)': { radius: 16, cardHeight: 104, nameFont: 0, titleFont: 12 },
-  '직사각형':          { radius: 0, cardHeight: 100, nameFont: 0, titleFont: 18 },
-  '컴팩트':            { radius: 0, cardHeight: 64, nameFont: 0, titleFont: 12 },
+  '둥근 포스터(기본)': { radius: 16, cardHeight: 60, nameFont: 0, titleFont: 12 },
+  '직사각형':          { radius: 0, cardHeight: 60, nameFont: 0, titleFont: 14 },
+  '넉넉하게':          { radius: 16, cardHeight: 84, nameFont: 0, titleFont: 13 },
 };
 
 /* ── 상태 ──
