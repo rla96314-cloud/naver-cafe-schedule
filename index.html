@@ -174,7 +174,7 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:0, bg:'흰색', timeFmt:'AM/PM',
     header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1,
-    cardHeight:100, nameFont:28, titleFont:18,
+    cardHeight:100, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:18,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -192,9 +192,20 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
      │ [⑤제목      ] [②이미지]│ ← 본문 구역: 남는 높이 전부. 제목은 줄바꿈/한줄 선택
      └────────────────────────┘
      각 구역은 overflow:hidden — 글자가 구역을 절대 못 넘음. 카드도 안 커짐. */
-  const nameF = Math.max(8, +t.nameFont || 28);          // ③④ 폰트 (고정, fontScale 무시)
-  const titleF = Math.max(8, Math.round((+t.titleFont || 18) * sc)); // ⑤ 폰트 (fontScale 적용)
   const CARD_PAD = 8, ZONE_GAP = 4;
+  /* ③④는 변동성 없는 데이터(멤버 목록·시간 형식) → 이번 주 최장 이름·최장 시간을 미리 알 수 있다.
+     nameFont가 0(자동)이면 "고정 내용이 전부 보이는 최대 폰트"를 계산한다.
+     열 내용폭: (740 - 바깥패딩28)/7 - 셀패딩8 - 카드패딩16 ≈ 77px */
+  const COL_CONTENT = Math.floor((740 - 28) / 7) - 8 - CARD_PAD * 2;
+  const timesSeen = schedule.map(s => String(formatTime(s.time, t.timeFmt)));
+  const maxTimeLen = Math.max(3, ...timesSeen.map(s => s.length), 0);
+  const namesSeen = members.filter(m => schedule.some(s => s.mem === m.id)).map(m => m.name);
+  const maxNameLen = Math.max(2, ...namesSeen.map(n => n.length), 0);
+  // 폭 계수(Pretendard 볼드 실측): 한글 ≈ 0.93×F/자, 시간(숫자·영문·콜론) ≈ 0.56×F/자, 알약 좌우패딩 ≈ 0.7×F
+  const autoF = Math.floor((COL_CONTENT - ZONE_GAP) / (maxNameLen * 0.93 + maxTimeLen * 0.56 + 0.72));
+  const nameF = (+t.nameFont > 0) ? +t.nameFont : Math.max(9, Math.min(40, autoF)); // ③④ 고정(축소 없음)
+  const titleF = Math.max(8, Math.round((+t.titleFont || 18) * sc));                 // ⑤ (fontScale 적용)
+  const pillW = Math.ceil(nameF * (maxTimeLen * 0.56 + 0.72)) + 2;                   // ④ 구역 = 딱 필요한 폭
   const nameZoneH = Math.round(nameF * 1.25);
   const cardH = (+t.cardHeight > 0) ? +t.cardHeight
     : nameZoneH + Math.round(titleF * 2.6) + CARD_PAD * 2 + ZONE_GAP;
@@ -261,7 +272,7 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
     const headerZone =
       `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
       `<td style="padding:0;vertical-align:top"><div style="height:${nameZoneH}px;overflow:hidden;text-align:left;white-space:nowrap">${link(nameHtml)}</div></td>` +
-      `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:45%"><div style="height:${nameZoneH}px;overflow:hidden;text-align:right;white-space:nowrap">${pill}</div></td>` +
+      `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${pillW}px"><div style="height:${nameZoneH}px;overflow:hidden;text-align:right;white-space:nowrap">${pill}</div></td>` +
       `</tr></table>`;
 
     /* ⑤ 제목 구역 — 줄바꿈 선택: '자동'=여러 줄(구역 안에서), '말줄임'=한 줄(…) */
@@ -271,14 +282,15 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
     const titleInner = c.title
       ? link(`<span style="font-size:${titleF}px;line-height:1.25;color:${m.fg}">${escapeHtml(c.title)}</span>`)
       : '';
-    /* ② 아바타 구역 — 제목 구역 오른쪽 정사각(titleZoneH). 이미지 없으면 제목이 전체 폭 */
+    /* ② 아바타 구역 — 제목 구역 오른쪽 정사각. 제목이 최소 60% 폭을 갖도록 폭 상한(40%). */
+    const avS = Math.min(titleZoneH, Math.round(COL_CONTENT * 0.4));
     const avatar = img
-      ? `<img src="${escapeAttr(img)}" alt="" style="width:${titleZoneH}px;height:${titleZoneH}px;object-fit:cover;${radius ? `border-radius:${Math.min(8, radius)}px;` : ''}display:block">`
+      ? `<img src="${escapeAttr(img)}" alt="" style="width:${avS}px;height:${avS}px;object-fit:cover;${radius ? `border-radius:${Math.min(8, radius)}px;` : ''}display:block">`
       : '';
     const bodyZone = avatar
       ? `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
         `<td style="padding:0;vertical-align:top"><div style="height:${titleZoneH}px;overflow:hidden;text-align:${align};${wrapCss}">${titleInner}</div></td>` +
-        `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${titleZoneH + ZONE_GAP}px">${avatar}</td>` +
+        `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${avS + ZONE_GAP}px">${avatar}</td>` +
         `</tr></table>`
       : `<div style="height:${titleZoneH}px;overflow:hidden;text-align:${align};${wrapCss}">${titleInner}</div>`;
 
@@ -580,14 +592,14 @@ function fallbackMembers() {
 }
 const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
-  fontSize: '보통', fontScale: 1, cardHeight: 100, nameFont: 28, titleFont: 18, radius: 0,
+  fontSize: '보통', fontScale: 1, cardHeight: 100, nameFont: 0, titleFont: 18, radius: 0,
   bg: '흰색', linkUnderline: true, collision: '좌우', align: '왼쪽',
   wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
 };
 const PRESETS = {
-  '직사각형(기본)': { radius: 0, cardHeight: 100, nameFont: 28, titleFont: 18 },
-  '둥근 포스터':    { radius: 16, cardHeight: 100, nameFont: 28, titleFont: 18 },
-  '컴팩트':         { radius: 0, cardHeight: 64, nameFont: 15, titleFont: 12 },
+  '직사각형(기본)': { radius: 0, cardHeight: 100, nameFont: 0, titleFont: 18 },
+  '둥근 포스터':    { radius: 16, cardHeight: 100, nameFont: 0, titleFont: 18 },
+  '컴팩트':         { radius: 0, cardHeight: 64, nameFont: 0, titleFont: 12 },
 };
 
 /* ── 상태 ──
@@ -910,7 +922,7 @@ function settingsView() {
       row('헤더', el('input', { value: S.theme.header, style: inp + ';flex:1', oninput: e => { S.theme.header = e.target.value; save(); } })),
       row('배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 없음', oninput: e => { S.theme.subtitle = e.target.value; save(); } })),
       row('로고 URL', el('input', { value: S.theme.logo || '', class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: 'https://… (외부만)', oninput: e => { S.theme.logo = e.target.value.trim(); save(); } })),
-      row('이름·시간 폰트', slider(S.theme.nameFont, 10, 40, 1, v => v + 'px', v => { S.theme.nameFont = v; save(); })),
+      row('이름·시간 폰트', slider(S.theme.nameFont, 0, 40, 1, v => v ? v + 'px' : '자동(최대)', v => { S.theme.nameFont = v; save(); })),
       row('제목 폰트', slider(S.theme.titleFont, 8, 30, 1, v => v + 'px', v => { S.theme.titleFont = v; save(); })),
       row('제목 줄바꿈', seg(S.theme.wrap, [{ v: '자동', label: '줄바꿈' }, { v: '말줄임', label: '한 줄(…)' }], v => { S.theme.wrap = v; save(); render(); })),
       row('카드 높이', slider(S.theme.cardHeight, 40, 200, 4, v => v + 'px', v => { S.theme.cardHeight = v; save(); })),
