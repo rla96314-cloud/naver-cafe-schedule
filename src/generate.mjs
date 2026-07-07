@@ -93,6 +93,50 @@ export function normalizeImgUrl(u) {
   return s;
 }
 
+/* ── 생성 시점 글자 맞춤 ──
+   ★네이버가 overflow:hidden을 제거함(실제 대문 실측 2026-07-06: 제목이 카드 밖으로 흘러나옴).
+   → 구역 클립에 의존하지 말고, 폭·줄수를 계산해 생성 단계에서 잘라낸다(줄은 <br>로 확정).
+   글자폭 단위(Pretendard 실측): 한글 0.95 / 기호 0.5 / 영문·숫자 0.55 (×F). 0.92 보수 계수. */
+function chUnit(ch) {
+  if (/[♥♡●◆★☆‥…·]/.test(ch)) return 0.5;               // 기호(Pretendard 실측 ~0.6em)
+  if (/[ᄀ-ᇿ⺀-꓏가-힣豈-﫿︰-﹏＀-｠]/.test(ch)) return 0.95; // 한글/전각
+  return 0.55;                                                  // 영문·숫자·공백
+}
+function textUnits(s) { let u = 0; for (const ch of String(s)) u += chUnit(ch); return u; }
+/* 텍스트를 폭(px)·폰트·최대줄수에 맞춰 줄 배열로. 넘치면 잘라내고 마지막에 … */
+export function fitLines(text, widthPx, fontPx, maxLines) {
+  const perLine = Math.max(1, (widthPx / fontPx) * 0.92);
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '', curU = 0, trunc = false;
+  const push = () => { if (cur) { lines.push(cur); cur = ''; curU = 0; } };
+  outer:
+  for (const w of words) {
+    const u = textUnits(w);
+    const need = cur ? 0.55 + u : u;
+    if (curU + need <= perLine) { cur = cur ? cur + ' ' + w : w; curU += need; continue; }
+    push();
+    if (lines.length >= maxLines) { trunc = true; break; }
+    let rest = w;
+    while (textUnits(rest) > perLine) { // 한 줄보다 긴 단어는 글자 단위로 쪼갬
+      let acc = '', au = 0;
+      for (const ch of rest) { if (au + chUnit(ch) > perLine) break; acc += ch; au += chUnit(ch); }
+      if (!acc) break;
+      lines.push(acc); rest = rest.slice(acc.length);
+      if (lines.length >= maxLines) { trunc = true; break outer; }
+    }
+    cur = rest; curU = textUnits(rest);
+  }
+  push();
+  if (lines.length > maxLines) { lines.length = maxLines; trunc = true; }
+  if (trunc && lines.length) { // 마지막 줄에 … 넣을 자리 확보
+    let last = lines[lines.length - 1];
+    while (last && textUnits(last) + 0.55 > perLine) last = last.slice(0, -1);
+    lines[lines.length - 1] = (last || '').replace(/\s+$/, '') + '…';
+  }
+  return lines;
+}
+
 /* HTML 이스케이프 — 제목에 <,>,& 들어가도 안 깨지게. */
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -128,7 +172,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
     header:'', subtitle:'', logo:'', linkUnderline:false, fontScale:1,
-    cardHeight:60, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:12,
+    cardHeight:60, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:11,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -162,7 +206,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const autoF = Math.floor((COL_CONTENT - ZONE_GAP) / (maxNameLen * 0.93 + PILL_R * (maxTimeLen * 0.56 + 0.72)));
   const nameF = (+t.nameFont > 0) ? +t.nameFont : Math.max(9, Math.min(40, autoF)); // ③ 고정(축소 없음)
   const pillF = Math.max(8, Math.round(nameF * PILL_R));                              // ④ 이름의 0.8배
-  const titleF = Math.max(8, Math.round((+t.titleFont || 12) * sc));                  // ⑤ (fontScale 적용)
+  const titleF = Math.max(8, Math.round((+t.titleFont || 11) * sc));                  // ⑤ (fontScale 적용)
   const pillW = Math.ceil(pillF * (maxTimeLen * 0.56 + 0.9)) + 2;                     // ④ 구역 = 딱 필요한 폭
   const nameZoneH = Math.round(nameF * 1.25);
   const cardH = (+t.cardHeight > 0) ? +t.cardHeight
@@ -232,26 +276,29 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     /* ③ 이름 — 폰트 고정(nameF), nowrap, 구역 밖으로 못 나감 */
     const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
 
-    /* ⑤ 제목 구역 — 줄바꿈 선택: '자동'=여러 줄(구역 안에서), '말줄임'=한 줄(…)
-       ★네이버가 word-break:keep-all을 제거함(실제 대문 실측: "같이보기"→"같/이보기" 쪼개짐).
-       nowrap은 생존(알약으로 증명)하므로, 짧은 단어(≤5자)를 nowrap span으로 감아 keep-all을 흉내.
-       긴 단어(≥6자)는 nowrap하면 통째로 클립되므로 글자 줄바꿈을 허용. */
-    const wrapCss = t.wrap === '말줄임'
-      ? 'white-space:nowrap;text-overflow:ellipsis'
-      : 'overflow-wrap:break-word';
-    const titleText = t.wrap === '말줄임'
-      ? escapeHtml(c.title)
-      : String(c.title).split(/\s+/).filter(Boolean).map(w =>
-          w.length <= 5 ? `<span style="white-space:nowrap">${escapeHtml(w)}</span>` : escapeHtml(w)
-        ).join(' ');
-    const titleInner = c.title
-      ? link(`<span style="font-size:${titleF}px;line-height:1.25;color:${m.fg}">${titleText}</span>`)
-      : '';
+    /* ⑤ 제목 — ★네이버가 overflow:hidden과 word-break:keep-all을 제거함(대문 실측).
+       클립에 기대지 않고 생성 단계에서 fitLines로 줄을 확정(<br>)·잘라냄(…).
+       단어는 nowrap span으로 감아(알약으로 생존 증명) 글자 단위 쪼개짐 방지. */
+    const lineH = Math.round(titleF * 1.2);
+    const avS = (!narrow && img) ? Math.min(titleZoneH, Math.round(COL_CONTENT * 0.34)) : 0;
+    const titleW = narrow
+      ? Math.max(20, Math.floor((COL_CONTENT + PAD_H * 2) * 0.49) - PAD_H * 2)
+      : (avS ? COL_CONTENT - avS - ZONE_GAP : COL_CONTENT);
+    const titleMaxLines = h => (t.wrap === '말줄임') ? 1 : Math.max(1, Math.floor(h / lineH));
+    const titleHtmlFor = h => {
+      if (!c.title) return '';
+      const lines = fitLines(c.title, titleW, titleF, titleMaxLines(h));
+      const htmlLines = lines.map(ln =>
+        ln.split(' ').map(w => `<span style="white-space:nowrap">${escapeHtml(w)}</span>`).join(' ')
+      ).join('<br>');
+      return link(`<span style="font-size:${titleF}px;line-height:${lineH}px;color:${m.fg}">${htmlLines}</span>`);
+    };
 
     /* 구역 div에 font-size·line-height를 박아 넣는다 — 안 하면 inline <a>의 스트럿이
-       기본 16px 폰트를 상속해 줄박스가 구역보다 커지고 글자가 잘린다(실측). */
+       기본 16px 폰트를 상속해 줄박스가 구역보다 커진다(실측). overflow:hidden은
+       미리보기 보험용으로 남기되 동작이 그것에 의존하지 않는다. */
     const nameZone = `height:${nameZoneH}px;overflow:hidden;white-space:nowrap;font-size:${nameF}px;line-height:${nameZoneH}px`;
-    const titleZone = h => `height:${h}px;overflow:hidden;text-align:${align};${wrapCss};font-size:${titleF}px;line-height:1.25`;
+    const titleZone = h => `height:${h}px;overflow:hidden;text-align:${align};font-size:${titleF}px;line-height:${lineH}px`;
 
     let body;
     if (narrow) {
@@ -260,31 +307,29 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       body =
         `<div style="${nameZone};text-align:left">${link(nameHtml)}</div>` +
         `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` +
-        `<div style="${titleZone(nTitleH)}">${titleInner}</div>` +
+        `<div style="${titleZone(nTitleH)}">${titleHtmlFor(nTitleH)}</div>` +
         `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` +
         `<div style="${nameZone};text-align:left">${pill}</div>`;
     } else {
-      /* 헤더 구역: 이름 좌 / 시간 우. table-layout:fixed + overflow:hidden = 구역 침범 불가 */
+      /* 헤더 구역: 이름 좌 / 시간 우 */
       const headerZone =
         `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
         `<td style="padding:0;vertical-align:top"><div style="${nameZone};text-align:left">${link(nameHtml)}</div></td>` +
         `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${pillW}px"><div style="${nameZone};text-align:right">${pill}</div></td>` +
         `</tr></table>`;
-      /* ② 아바타 구역 — 카드 우하단 모서리에 딱 붙게.
-         위 여백(margin-top)으로 바닥까지 밀고, 고정폭 td보다 이미지가 커서 오른쪽으로
-         PAD_H만큼 삐져나감 → 카드 패딩을 먹고 모서리에 밀착. 카드 overflow:hidden이 클립. */
-      const avS = Math.min(titleZoneH, Math.round(COL_CONTENT * 0.42));
-      const avatar = img
+      /* ② 아바타 — 제목 구역 오른쪽 하단 정렬. 카드 클립에 의존하지 않게 완전히 안쪽에 배치
+         (overflow 제거돼도 카드 밖으로 안 나감). */
+      const avatar = avS
         ? `<img src="${escapeAttr(img)}" alt="" style="width:${avS}px;height:${avS}px;object-fit:cover;` +
-          (radius ? `border-radius:10px;` : '') +
-          `display:block;margin:${titleZoneH - avS + PAD_V}px 0 0 0">`
+          (radius ? `border-radius:8px;` : '') +
+          `display:block;margin-top:${Math.max(0, titleZoneH - avS)}px">`
         : '';
       const bodyZone = avatar
         ? `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
-          `<td style="padding:0;vertical-align:top"><div style="${titleZone(titleZoneH)}">${titleInner}</div></td>` +
-          `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${Math.max(0, avS - PAD_H) + ZONE_GAP}px">${avatar}</td>` +
+          `<td style="padding:0;vertical-align:top"><div style="${titleZone(titleZoneH)}">${titleHtmlFor(titleZoneH)}</div></td>` +
+          `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${avS}px">${avatar}</td>` +
           `</tr></table>`
-        : `<div style="${titleZone(titleZoneH)}">${titleInner}</div>`;
+        : `<div style="${titleZone(titleZoneH)}">${titleHtmlFor(titleZoneH)}</div>`;
       body = headerZone + `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` + bodyZone;
     }
 
