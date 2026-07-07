@@ -300,12 +300,20 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
     /* ③ 이름 — 폰트 고정(nameF), nowrap, 구역 밖으로 못 나감 */
     const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
 
-    /* ⑤ 제목 구역 — 줄바꿈 선택: '자동'=여러 줄(구역 안에서), '말줄임'=한 줄(…) */
+    /* ⑤ 제목 구역 — 줄바꿈 선택: '자동'=여러 줄(구역 안에서), '말줄임'=한 줄(…)
+       ★네이버가 word-break:keep-all을 제거함(실제 대문 실측: "같이보기"→"같/이보기" 쪼개짐).
+       nowrap은 생존(알약으로 증명)하므로, 짧은 단어(≤5자)를 nowrap span으로 감아 keep-all을 흉내.
+       긴 단어(≥6자)는 nowrap하면 통째로 클립되므로 글자 줄바꿈을 허용. */
     const wrapCss = t.wrap === '말줄임'
       ? 'white-space:nowrap;text-overflow:ellipsis'
-      : 'overflow-wrap:break-word;word-break:keep-all';
+      : 'overflow-wrap:break-word';
+    const titleText = t.wrap === '말줄임'
+      ? escapeHtml(c.title)
+      : String(c.title).split(/\s+/).filter(Boolean).map(w =>
+          w.length <= 5 ? `<span style="white-space:nowrap">${escapeHtml(w)}</span>` : escapeHtml(w)
+        ).join(' ');
     const titleInner = c.title
-      ? link(`<span style="font-size:${titleF}px;line-height:1.25;color:${m.fg}">${escapeHtml(c.title)}</span>`)
+      ? link(`<span style="font-size:${titleF}px;line-height:1.25;color:${m.fg}">${titleText}</span>`)
       : '';
 
     /* 구역 div에 font-size·line-height를 박아 넣는다 — 안 하면 inline <a>의 스트럿이
@@ -370,7 +378,9 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
         .sort((a, b) => members.findIndex(m => m.id === a.mem) - members.findIndex(m => m.id === b.mem));
       if (!es.length) { rows += `      <td></td>\n`; continue; }
       let inner;
-      if (es.length > 1 && t.collision === '좌우') {
+      // 좌우 반폭은 딱 2명일 때만 — 3명 이상은 반폭이 세로로 어색하게 쌓이므로(실측)
+      // 전폭 카드를 위아래로 쌓는다.
+      if (es.length === 2 && t.collision === '좌우') {
         inner = es.map((c, i) =>
           (i ? '<span style="display:inline-block;width:2%"></span>' : '') + card(c, true)).join('');
       } else {
