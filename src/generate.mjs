@@ -101,7 +101,8 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const t = {
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:0, bg:'흰색', timeFmt:'AM/PM',
-    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1, cardHeight:60, pillPos:'옆',
+    header:'', subtitle:'', logo:'', linkUnderline:true, fontScale:1,
+    cardHeight:100, nameFont:28, titleFont:18,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -113,9 +114,19 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const sc = Math.max(0.6, Math.min(1.6, +t.fontScale || 1));
   const SZ = {};
   for (const k in base) SZ[k] = k === 'thumb' ? base[k] : Math.round(base[k] * sc * 10) / 10;
-  // 카드는 항상 고정 높이(균일 격자). cardHeight>0이면 사용자 지정, 아니면 글자 크기에서 계산.
-  // 내용이 넘치면 카드를 키우는 게 아니라 fitCards(앱)가 글자를 줄인다.
-  const cardH = (+t.cardHeight > 0) ? +t.cardHeight : Math.round(SZ.name * 1.35 + SZ.title * 2 * 1.4 + 22);
+  /* ── 카드 구역 치수 (사용자 스케치 기준) ──
+     ┌────────────────────────┐
+     │ [③이름]      [④시간]  │ ← 헤더 구역: 높이 = nameFont×1.25, 폰트 고정(축소 없음)
+     │ [⑤제목      ] [②이미지]│ ← 본문 구역: 남는 높이 전부. 제목은 줄바꿈/한줄 선택
+     └────────────────────────┘
+     각 구역은 overflow:hidden — 글자가 구역을 절대 못 넘음. 카드도 안 커짐. */
+  const nameF = Math.max(8, +t.nameFont || 28);          // ③④ 폰트 (고정, fontScale 무시)
+  const titleF = Math.max(8, Math.round((+t.titleFont || 18) * sc)); // ⑤ 폰트 (fontScale 적용)
+  const CARD_PAD = 8, ZONE_GAP = 4;
+  const nameZoneH = Math.round(nameF * 1.25);
+  const cardH = (+t.cardHeight > 0) ? +t.cardHeight
+    : nameZoneH + Math.round(titleF * 2.6) + CARD_PAD * 2 + ZONE_GAP;
+  const titleZoneH = Math.max(0, cardH - CARD_PAD * 2 - nameZoneH - ZONE_GAP);
   const fontStack = FONT[t.font] || FONT.Pretendard;
   const bg = BG[t.bg] || BG.흰색;
   const dark = bg.dark;
@@ -161,54 +172,51 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const img = (S.inlineImg && m.img && /^https?:\/\//i.test(m.img)) ? m.img : null;
 
     const timeTxt = escapeHtml(formatTime(c.time, t.timeFmt));
-    // 카드 안 글자는 모두 em(카드 기준 font-size 대비). fitCards(앱)가 카드 font-size 하나만
-    // 줄이면 이름·제목·알약이 함께 작아진다 → "넘치면 카드가 커지는 게 아니라 글자가 작아짐".
-    const cardBase = SZ.name;
-    const em = px => (px / cardBase).toFixed(3) + 'em';
-    const mkPill = (relPx, pad, rad) =>
-      `<span style="display:inline-block;background:${pillBg};color:#2A2724;` +
-      (rad ? `border-radius:${rad}px;` : '') +
-      `padding:${pad};font-size:${em(relPx)};font-weight:800;white-space:nowrap">${timeTxt}</span>`;
-    const pill = mkPill(SZ.pill, '2px 7px', radius ? 9 : 0);
-    const pillSm = mkPill(Math.max(8.5, SZ.pill - 1.5), '1px 5px', radius ? 7 : 0);
-
-    // 이름은 nowrap — 좁은 칸에서도 "여우연"이 글자별로 세로로 쪼개지지 않게.
-    const nameHtml = `<b style="font-size:1em;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
-    const titleSpan = c.title ? `<span style="font-size:${em(SZ.title)};color:${m.fg}">${escapeHtml(c.title)}</span>` : '';
-    // 카드 위 inline 링크는 모바일에서 hover가 없어 밑줄(2차 E 보존)로 클릭 가능 신호.
     const deco = t.linkUnderline ? 'underline' : 'none';
     const link = inner => linkable
-      ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg};word-break:keep-all">${inner}</a>`
+      ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg}">${inner}</a>`
       : inner;
-    const titleBlock = c.title ? `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${link(titleSpan)}</div>` : '';
 
-    // 썸네일 = 이름 앞 작은 아바타(1.5em, em이라 fitCards가 글자와 함께 축소). 60px 카드에도 맞음.
-    const imgTag = img ? `<img src="${escapeAttr(img)}" alt="" style="width:1.5em;height:1.5em;object-fit:cover;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:4px">` : '';
-    const pillInline = t.pillPos !== '윗줄'; // 기본: 이름 좌상단 / 시간 우상단 코너
-    let body;
-    if (narrow) {
-      // 좌우 충돌: 세로 스택(아바타+이름/제목/알약)
-      body = `<div style="text-align:${align}">${imgTag}${link(nameHtml + (c.title ? `<br>${titleSpan}` : ''))}</div>` +
-             `<div style="margin-top:6px;text-align:${align}">${pillSm}</div>`;
-    } else if (pillInline) {
-      // 이름(+아바타) 좌상단 끝 / 시간 우상단 끝. vertical-align:top = 위 끝 정렬.
-      // 좁아서 넘치면 fitCards가 글자를 줄여 한 줄 유지.
-      body =
-        `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse"><tr>` +
-        `<td style="padding:0;text-align:left;vertical-align:top">${imgTag}${link(nameHtml)}</td>` +
-        `<td style="padding:0 0 0 4px;text-align:right;vertical-align:top;width:1%;white-space:nowrap">${pillSm}</td>` +
-        `</tr></table>${titleBlock}`;
-    } else {
-      // 시간 알약 윗줄 오른쪽, 이름(+아바타)+제목 전체 폭.
-      const topRight = `<div style="text-align:right;line-height:1">${pill}</div>`;
-      body = topRight + `<div style="margin-top:4px;text-align:${align};word-break:keep-all">${imgTag}${link(nameHtml)}</div>${titleBlock}`;
-    }
+    /* ④ 시간 알약 — 폰트 고정(nameF), 구역 안에서 클립 */
+    const pill =
+      `<span style="display:inline-block;background:${pillBg};color:#2A2724;` +
+      (radius ? `border-radius:${Math.round(nameZoneH / 2)}px;` : '') +
+      `padding:0 ${Math.round(nameF * 0.35)}px;font-size:${nameF}px;line-height:${nameZoneH}px;` +
+      `font-weight:800;white-space:nowrap">${timeTxt}</span>`;
+    /* ③ 이름 — 폰트 고정(nameF), nowrap, 구역 밖으로 못 나감 */
+    const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
+    /* 헤더 구역: 이름 좌 / 시간 우. table-layout:fixed + overflow:hidden = 구역 침범 불가 */
+    const headerZone =
+      `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
+      `<td style="padding:0;vertical-align:top"><div style="height:${nameZoneH}px;overflow:hidden;text-align:left;white-space:nowrap">${link(nameHtml)}</div></td>` +
+      `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:45%"><div style="height:${nameZoneH}px;overflow:hidden;text-align:right;white-space:nowrap">${pill}</div></td>` +
+      `</tr></table>`;
 
-    // 카드는 항상 고정 높이 → 균일 격자(내용 없어도 유지). 넘치면 fitCards가 글자 축소, 그래도 넘으면 잘림.
+    /* ⑤ 제목 구역 — 줄바꿈 선택: '자동'=여러 줄(구역 안에서), '말줄임'=한 줄(…) */
+    const wrapCss = t.wrap === '말줄임'
+      ? 'white-space:nowrap;text-overflow:ellipsis'
+      : 'overflow-wrap:break-word;word-break:keep-all';
+    const titleInner = c.title
+      ? link(`<span style="font-size:${titleF}px;line-height:1.25;color:${m.fg}">${escapeHtml(c.title)}</span>`)
+      : '';
+    /* ② 아바타 구역 — 제목 구역 오른쪽 정사각(titleZoneH). 이미지 없으면 제목이 전체 폭 */
+    const avatar = img
+      ? `<img src="${escapeAttr(img)}" alt="" style="width:${titleZoneH}px;height:${titleZoneH}px;object-fit:cover;${radius ? `border-radius:${Math.min(8, radius)}px;` : ''}display:block">`
+      : '';
+    const bodyZone = avatar
+      ? `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
+        `<td style="padding:0;vertical-align:top"><div style="height:${titleZoneH}px;overflow:hidden;text-align:${align};${wrapCss}">${titleInner}</div></td>` +
+        `<td style="padding:0 0 0 ${ZONE_GAP}px;vertical-align:top;width:${titleZoneH + ZONE_GAP}px">${avatar}</td>` +
+        `</tr></table>`
+      : `<div style="height:${titleZoneH}px;overflow:hidden;text-align:${align};${wrapCss}">${titleInner}</div>`;
+
+    const body = headerZone + `<div style="height:${ZONE_GAP}px;line-height:${ZONE_GAP}px;font-size:1px">&nbsp;</div>` + bodyZone;
+
+    // 카드: 고정 높이·고정 구역. 내용이 없어도 크기 유지, 많아도 안 커짐(구역에서 클립).
     const style =
-      `background:${cardBg};font-size:${cardBase}px;` +
+      `background:${cardBg};` +
       (radius ? `border-radius:${radius}px;` : '') +
-      `padding:9px;${shadow}box-sizing:border-box;word-break:keep-all;` +
+      `padding:${CARD_PAD}px;${shadow}box-sizing:border-box;` +
       `height:${cardH}px;overflow:hidden;` +
       (narrow ? `display:inline-block;width:49%;vertical-align:top;` : `display:block;`);
 

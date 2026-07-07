@@ -36,13 +36,14 @@ function fallbackMembers() {
 }
 const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
-  fontSize: '보통', fontScale: 1, cardHeight: 60, radius: 0, pillPos: '옆',
+  fontSize: '보통', fontScale: 1, cardHeight: 100, nameFont: 28, titleFont: 18, radius: 0,
   bg: '흰색', linkUnderline: true, collision: '좌우', align: '왼쪽',
   wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard',
 };
 const PRESETS = {
-  '직사각형(기본)': { radius: 0, cardHeight: 60, pillPos: '옆' },
-  '둥근 포스터':    { radius: 16, cardHeight: 60, pillPos: '옆' },
+  '직사각형(기본)': { radius: 0, cardHeight: 100, nameFont: 28, titleFont: 18 },
+  '둥근 포스터':    { radius: 16, cardHeight: 100, nameFont: 28, titleFont: 18 },
+  '컴팩트':         { radius: 0, cardHeight: 64, nameFont: 15, titleFont: 12 },
 };
 
 /* ── 상태 ──
@@ -53,10 +54,13 @@ function boot() {
   const weeks = (Array.isArray(cached.weeks) && cached.weeks.length)
     ? cached.weeks.map(w => ({ ...w, dirty: false }))
     : DEFAULT_SHEET_TABS.map(t => ({ gid: String(t.gid), label: t.label, weekStart: '', schedule: [], loaded: false, dirty: false }));
+  // 구역제 레이아웃 이전 캐시(nameFont 없음)는 카드 치수를 새 기본값으로 올림
+  const cachedTheme = cached.theme || {};
+  if (cachedTheme.nameFont == null) { delete cachedTheme.cardHeight; delete cachedTheme.pillPos; }
   return {
     members: cached.members && cached.members.length ? cached.members : fallbackMembers(),
     membersSource: cached.membersSource === 'sheet' ? 'cache' : 'default',
-    theme: { ...THEME_DEFAULT, ...(cached.theme || {}) },
+    theme: { ...THEME_DEFAULT, ...cachedTheme },
     weeks,
     weekIdx: Math.min(typeof cached.weekIdx === 'number' ? cached.weekIdx : weeks.length - 1, weeks.length - 1),
     sheetId: cached.sheetId || ('https://docs.google.com/spreadsheets/d/' + DEFAULT_SHEET_ID + '/edit'),
@@ -133,28 +137,9 @@ async function ensureWeekLoaded(i) {
   } catch {}
 }
 
-/* ── 카드 자동 맞춤(글자 축소) + 복사 ── */
-function fitCards(root) {
-  if (!root) return;
-  root.querySelectorAll('.schd-card').forEach(card => {
-    const base = parseFloat(card.style.fontSize) || 14;
-    const min = base * 0.6;
-    let fs = base, guard = 0;
-    card.style.fontSize = fs + 'px';
-    while ((card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1) && fs > min && guard++ < 80) {
-      fs = Math.round((fs - 0.5) * 10) / 10;
-      card.style.fontSize = fs + 'px';
-    }
-  });
-}
+/* ── 복사 ── 구역제 레이아웃이라 측정·글자축소 불필요 — 생성 결과가 곧 최종. */
 function fittedHTML() {
-  const host = el('div', { style: 'position:fixed;left:-10000px;top:0;width:740px' });
-  host.innerHTML = genHTML();
-  document.body.append(host);
-  fitCards(host);
-  let out = host.firstElementChild ? host.firstElementChild.outerHTML : host.innerHTML;
-  host.remove();
-  return out.replace(/ data-eid="[^"]*"/g, ''); // 편집용 식별자는 대문에 안 내보냄
+  return genHTML().replace(/ data-eid="[^"]*"/g, ''); // 편집용 식별자는 대문에 안 내보냄
 }
 function onCopy() {
   const html = fittedHTML();
@@ -169,7 +154,6 @@ function refreshPreview() {
   const host = $('#pv-render');
   if (host) {
     host.innerHTML = genHTML();
-    fitCards(host);
     if (S.selId) { const c = host.querySelector(`[data-eid="${S.selId}"]`); if (c) c.style.outline = `2.5px solid ${C.accent}`; }
   }
   const wb = $('#warn-box'); if (wb) paintWarnings(wb);
@@ -382,11 +366,11 @@ function settingsView() {
       row('헤더', el('input', { value: S.theme.header, style: inp + ';flex:1', oninput: e => { S.theme.header = e.target.value; save(); } })),
       row('배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 없음', oninput: e => { S.theme.subtitle = e.target.value; save(); } })),
       row('로고 URL', el('input', { value: S.theme.logo || '', class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: 'https://… (외부만)', oninput: e => { S.theme.logo = e.target.value.trim(); save(); } })),
-      row('글자 크기', seg(S.theme.fontSize, ['작게', '보통', '크게'].map(v => ({ v, label: v })), v => { S.theme.fontSize = v; save(); render(); })),
-      row('글자 배율', slider(Math.round(S.theme.fontScale * 100), 60, 160, 5, v => v + '%', v => { S.theme.fontScale = v / 100; save(); })),
-      row('카드 높이', slider(S.theme.cardHeight, 40, 160, 4, v => v + 'px', v => { S.theme.cardHeight = v; save(); })),
+      row('이름·시간 폰트', slider(S.theme.nameFont, 10, 40, 1, v => v + 'px', v => { S.theme.nameFont = v; save(); })),
+      row('제목 폰트', slider(S.theme.titleFont, 8, 30, 1, v => v + 'px', v => { S.theme.titleFont = v; save(); })),
+      row('제목 줄바꿈', seg(S.theme.wrap, [{ v: '자동', label: '줄바꿈' }, { v: '말줄임', label: '한 줄(…)' }], v => { S.theme.wrap = v; save(); render(); })),
+      row('카드 높이', slider(S.theme.cardHeight, 40, 200, 4, v => v + 'px', v => { S.theme.cardHeight = v; save(); })),
       row('모서리', seg(S.theme.radius, [{ v: 0, label: '직각' }, { v: 8, label: '약간' }, { v: 16, label: '둥글게' }], v => { S.theme.radius = v; save(); render(); })),
-      row('시간 위치', seg(S.theme.pillPos, [{ v: '옆', label: '이름 옆' }, { v: '윗줄', label: '윗줄' }], v => { S.theme.pillPos = v; save(); render(); })),
       row('배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => { S.theme.bg = v; save(); render(); })),
       row('링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '표시' }, { v: false, label: '없음' }], v => { S.theme.linkUnderline = v; save(); render(); })),
       row('시간 표기', seg(S.theme.timeFmt, ['AM/PM', '24시'].map(v => ({ v, label: v })), v => { S.theme.timeFmt = v; save(); render(); })),
@@ -434,10 +418,7 @@ function render() {
   ]);
   app.append(win);
   const pv = $('#pv-render');
-  if (pv) {
-    fitCards(pv);
-    if (S.selId) { const c = pv.querySelector(`[data-eid="${S.selId}"]`); if (c) c.style.outline = `2.5px solid ${C.accent}`; }
-  }
+  if (pv && S.selId) { const c = pv.querySelector(`[data-eid="${S.selId}"]`); if (c) c.style.outline = `2.5px solid ${C.accent}`; }
   paintSync();
   save();
 }
