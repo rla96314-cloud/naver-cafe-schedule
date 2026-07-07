@@ -82,6 +82,17 @@ function href(u) {
   return escapeAttr(s);
 }
 
+/* 이미지 URL 정규화 — 구글 드라이브 "공유 링크"는 뷰어 HTML 페이지라 <img>에 안 뜬다.
+   file/d/<ID>/view · open?id= · uc?id= 형태를 직접 이미지 주소(lh3)로 자동 변환.
+   (실측: 공유링크=text/html, lh3=image/png) */
+export function normalizeImgUrl(u) {
+  const s = String(u || '').trim();
+  if (!s) return '';
+  const m = s.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?[^#]*\bid=)([a-zA-Z0-9_-]{20,})/);
+  if (m) return 'https://lh3.googleusercontent.com/d/' + m[1];
+  return s;
+}
+
 /* HTML 이스케이프 — 제목에 <,>,& 들어가도 안 깨지게. */
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -198,7 +209,8 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const linkable = S.linkText && isUsableUrl(c.url || m.url);
     const url = c.url || m.url;
     // data: 이미지는 네이버가 제거(⑥) → 외부 http(s) URL만 허용.
-    const img = (S.inlineImg && m.img && /^https?:\/\//i.test(m.img)) ? m.img : null;
+    const imgN = normalizeImgUrl(m.img); // 드라이브 공유링크 → 직접 이미지 주소
+    const img = (S.inlineImg && imgN && /^https?:\/\//i.test(imgN)) ? imgN : null;
 
     const timeTxt = escapeHtml(formatTime(c.time, t.timeFmt));
     const deco = t.linkUnderline ? 'underline' : 'none';
@@ -300,8 +312,9 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   /* 상단 헤더(로고 + 제목 + 날짜범위 + 배지) — 항상 표시. */
   const headerTxt = String(t.header || '').trim() || '주간 스케줄표';
   const range = (dates.월 && dates.일) ? ` (${escapeHtml(dates.월)} – ${escapeHtml(dates.일)})` : '';
-  const emblem = (S.inlineImg && t.logo && /^https?:\/\//i.test(t.logo))
-    ? `<img src="${escapeAttr(t.logo)}" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:10px">`
+  const logoN = normalizeImgUrl(t.logo); // 드라이브 공유링크 → 직접 이미지 주소
+  const emblem = (S.inlineImg && logoN && /^https?:\/\//i.test(logoN))
+    ? `<img src="${escapeAttr(logoN)}" alt="" style="width:34px;height:34px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:10px">`
     : '';
   const titleTxt =
     `${emblem}<b style="font-size:21px;font-weight:800;color:${headInk};vertical-align:middle;letter-spacing:-0.5px">` +

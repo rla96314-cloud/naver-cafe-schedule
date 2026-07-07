@@ -347,7 +347,7 @@ function settingsView() {
         oninput: e => { m.fg = e.target.value; preview.style.color = e.target.value; refreshTag(); } }),
       el('input', { value: m.url || '', class: 'mono', style: inp + ';flex:1;min-width:0;font-size:11.5px;padding:5px 8px', placeholder: '채널URL',
         oninput: e => { m.url = e.target.value; refreshTag(); } }),
-      el('input', { value: m.img || '', class: 'mono', style: inp + ';flex:1;min-width:0;font-size:11.5px;padding:5px 8px', placeholder: '이미지URL(https, 외부만)',
+      el('input', { value: m.img || '', class: 'mono', style: inp + ';flex:1;min-width:0;font-size:11.5px;padding:5px 8px', placeholder: '이미지URL — 드라이브 공유링크도 OK(자동 변환)',
         oninput: e => { m.img = e.target.value; refreshTag(); } }),
     ]);
   });
