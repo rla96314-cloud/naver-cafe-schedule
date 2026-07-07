@@ -51,7 +51,7 @@ const PRESETS = {
 let S = boot();
 function boot() {
   const cached = (() => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch { return {}; } })();
-  const weeks = (Array.isArray(cached.weeks) && cached.weeks.length)
+  let weeks = (Array.isArray(cached.weeks) && cached.weeks.length)
     ? cached.weeks.map(w => {
         // 캐시 복구: 이름으로 발견된 주가 name 없이 저장된 옛 버그 — 라벨(0706 ~ 0712)에서 이름 복원
         let name = w.name || null;
@@ -59,6 +59,14 @@ function boot() {
         return { ...w, name, dirty: false };
       })
     : DEFAULT_SHEET_TABS.map(t => ({ gid: String(t.gid), label: t.label, weekStart: '', schedule: [], loaded: false, dirty: false }));
+  // 같은 라벨 중복 제거(삭제된 탭의 유령 주가 여러 번 쌓인 캐시 정리) — 첫 번째만 유지
+  const seenLabel = new Set();
+  weeks = weeks.filter(w => {
+    const k = String(w.label || '').replace(/\s/g, '');
+    if (k && seenLabel.has(k)) return false;
+    if (k) seenLabel.add(k);
+    return true;
+  });
   // 구역제 레이아웃 이전 캐시(nameFont 없음)는 카드 치수를 새 기본값으로 올림
   const cachedTheme = cached.theme || {};
   if (cachedTheme.nameFont == null) { delete cachedTheme.cardHeight; delete cachedTheme.pillPos; }
@@ -129,16 +137,12 @@ function fetchWeek(w) {
 }
 /* 새 주차 탭 자동 발견 — 마지막 주 다음 월요일부터 탭 이름(MMDD)으로 프로브. */
 async function discoverAndAppend(probe) {
-  // weekStart가 아직 없으면(첫 실행, 미로드) 라벨('06.29–07.05'/'0706 ~ 0712')에서 유도
-  const startOf = w => {
-    if (w.weekStart) return w.weekStart;
-    const m = String(w.label || '').match(/^(\d{2})\.?(\d{2})/);
-    return m ? `${m[1]}.${m[2]}` : '';
-  };
-  const starts = S.weeks.map(startOf).filter(Boolean).sort();
-  const latest = starts[starts.length - 1];
-  if (!latest) return false;
-  const found = await discoverWeeks(S.sheetId, S.members, latest, probe);
+  // 프로브 시작점 = "오늘이 속한 주의 월요일" — 캐시의 최신 주 기준이면
+  // 유령 주(삭제된 탭의 미래 라벨)가 남아있을 때 그 뒤만 뒤져 실제 새 주를 놓친다.
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) - 7); // 지난주 월요일부터(한 주 여유)
+  const from = `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const found = await discoverWeeks(S.sheetId, S.members, from, probe + 1);
   let added = false;
   for (const f of found) {
     if (S.weeks.some(w => w.label === f.label || (w.weekStart && w.weekStart === f.weekStart))) continue;
@@ -265,15 +269,30 @@ function weekTabBar() {
   bar.append(el('button', { style: arrow, onclick: () => switchWeek(S.weekIdx - 1) }, '‹'));
   S.weeks.forEach((w, i) => {
     const on = i === S.weekIdx;
-    bar.append(el('button', {
+    const tab = el('button', {
       style: `padding:6px 11px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:${on ? 700 : 600};` +
         `border:1px solid ${on ? 'var(--accent)' : 'var(--hair)'};background:${on ? 'rgba(192,67,42,.08)' : '#fff'};color:${on ? 'var(--accent)' : 'var(--ink)'}`,
       onclick: () => switchWeek(i),
-    }, (w.label || '주 ' + (i + 1)) + (w.dirty ? ' •' : '')));
+    }, (w.label || '주 ' + (i + 1)) + (w.dirty ? ' •' : ''));
+    if (on && S.weeks.length > 1) {
+      // 선택된 탭에만 삭제(✕) — 시트에서 지워진 유령 주를 목록에서 뺄 때 사용(시트 원본 무관)
+      tab.append(el('span', {
+        style: 'margin-left:7px;color:rgba(192,67,42,.55);font-weight:800;cursor:pointer',
+        title: '이 주를 목록에서 제거 (시트 원본은 그대로)',
+        onclick: ev => {
+          ev.stopPropagation();
+          if (!confirm(`'${w.label}' 주를 목록에서 뺄까요? (시트 원본은 그대로)`)) return;
+          S.weeks.splice(i, 1);
+          S.weekIdx = Math.max(0, Math.min(S.weekIdx, S.weeks.length - 1));
+          S.selId = null; save(); render();
+        },
+      }, '✕'));
+    }
+    bar.append(tab);
   });
   bar.append(el('button', { style: arrow, onclick: () => switchWeek(S.weekIdx + 1) }, '›'));
   bar.append(el('div', { style: 'flex:1' }));
-  const addIn = el('input', { class: 'mono', style: inp + ';width:150px;font-size:11.5px;padding:5px 8px', placeholder: '새 주 탭 URL/gid' });
+  const addIn = el('input', { class: 'mono', style: inp + ';width:150px;font-size:11.5px;padding:5px 8px', placeholder: '새 주 탭 이름/URL' });
   bar.append(addIn, el('button', { style: btn + ';padding:6px 10px;font-size:12px', onclick: () => appendTab(addIn) }, '＋'));
   return bar;
 }
