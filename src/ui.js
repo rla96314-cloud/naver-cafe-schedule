@@ -227,6 +227,31 @@ async function ensureWeekLoaded(i) {
 function fittedHTML() {
   return genHTML().replace(/ data-eid="[^"]*"/g, ''); // 편집용 식별자는 대문에 안 내보냄
 }
+
+/* ── PNG 내보내기 — 740px 오프스크린 렌더 → html2canvas 2배 해상도 → 다운로드.
+   아바타(lh3 등)는 CORS 허용 이미지만 캔버스에 들어감(useCORS). */
+async function exportPNG(btn) {
+  const orig = btn.textContent;
+  btn.textContent = '만드는 중…'; btn.disabled = true;
+  const host = el('div', { style: 'position:fixed;left:-10000px;top:0;width:740px;background:#EFEFEF' });
+  host.innerHTML = fittedHTML();
+  document.body.append(host);
+  try {
+    await new Promise(r => setTimeout(r, 400)); // 이미지 로드 여유
+    const canvas = await html2canvas(host, { scale: 2, useCORS: true, backgroundColor: '#EFEFEF', logging: false, imageTimeout: 8000 });
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+    const label = String(curWeek().label || '주간').replace(/[^\w가-힣]+/g, '-').replace(/^-|-$/g, '');
+    const a = el('a', { href: URL.createObjectURL(blob), download: `대문-${label}.png` });
+    document.body.append(a); a.click(); a.remove();
+    btn.textContent = '저장됨 ✓';
+  } catch (e) {
+    alert('PNG 생성 실패: ' + e.message);
+    btn.textContent = orig;
+  } finally {
+    host.remove(); btn.disabled = false;
+    setTimeout(() => { btn.textContent = 'PNG 저장'; }, 1500);
+  }
+}
 function onCopy() {
   const html = fittedHTML();
   const done = () => { const b = $('#copyBtn'); if (b) { b.textContent = '복사됨 ✓'; b.style.background = '#2E7D5B'; setTimeout(() => { b.textContent = 'HTML 복사'; b.style.background = C.accent; }, 1500); } };
@@ -511,11 +536,13 @@ function render() {
   app.innerHTML = '';
   const onMain = S.section === 'main';
   const copyBtn = el('button', { style: btnPrimary, onclick: onCopy }, 'HTML 복사'); copyBtn.id = 'copyBtn';
+  const pngBtn = el('button', { style: btn, onclick: () => exportPNG(pngBtn), title: '지금 보는 주를 PNG 이미지로 저장 (2배 해상도)' }, 'PNG 저장');
   const head = el('div', { style: 'height:56px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid var(--hair);background:#fff' }, [
     el('div', { style: 'font-size:15px;font-weight:800' }, '주간 스케줄 대문 만들기'),
     el('span', { id: 'sync-dot', style: 'display:inline-flex;align-items:center;gap:5px' }),
     el('div', { style: 'flex:1' }),
     el('button', { style: btn + (onMain ? '' : `;color:${C.accent};border-color:rgba(192,67,42,.4)`), onclick: () => { S.section = onMain ? 'settings' : 'main'; S.selId = null; render(); } }, onMain ? '설정 ⚙' : '← 돌아가기'),
+    pngBtn,
     copyBtn,
   ]);
   const win = el('div', { style: 'height:100vh;display:flex;flex-direction:column;background:var(--paper);max-width:960px;margin:0 auto;border-left:1px solid var(--hair);border-right:1px solid var(--hair)' }, [

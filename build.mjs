@@ -14,6 +14,7 @@ const gen   = stripExport(readFileSync('src/generate.mjs', 'utf8'));
 const csv   = stripExport(readFileSync('src/csv.mjs', 'utf8'));
 const sheet = stripExport(readFileSync('src/sheet.js', 'utf8'));
 const ui    = readFileSync('src/ui.js', 'utf8');
+const h2c   = readFileSync('vendor/html2canvas.min.js', 'utf8'); // PNG 내보내기용 (빌드 내장 — 런타임 CDN 없음)
 const membersCSV  = readFileSync('data/members.csv', 'utf8');
 const scheduleCSV = readFileSync('data/schedule.csv', 'utf8');
 
@@ -39,6 +40,8 @@ const html = `<!DOCTYPE html>
 <body>
 <div id="app"></div>
 <script>
+/* ───── vendor/html2canvas (PNG 내보내기) ───── */
+${h2c}
 /* ───── src/csv.mjs (인라인) ───── */
 ${csv}
 /* ───── src/generate.mjs (인라인, 코어와 동일) ───── */
