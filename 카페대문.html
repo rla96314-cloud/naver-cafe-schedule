@@ -386,7 +386,8 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
        클립에 기대지 않고 생성 단계에서 fitLines로 줄을 확정(<br>)·잘라냄(…).
        단어는 nowrap span으로 감아(알약으로 생존 증명) 글자 단위 쪼개짐 방지. */
     const lineH = Math.round(titleF * 1.2);
-    const avS = (!narrow && img) ? Math.min(titleZoneH, Math.round(COL_CONTENT * 0.34)) : 0;
+    // ② 아바타 폭 = ④시간 알약 구역 폭(pillW) — 오른쪽이 알약→아바타 한 기둥으로 정렬됨
+    const avS = (!narrow && img) ? pillW : 0;
     const titleW = narrow
       ? Math.max(20, Math.floor((COL_CONTENT + PAD_H * 2) * 0.49) - PAD_H * 2)
       : (avS ? COL_CONTENT - avS - ZONE_GAP : COL_CONTENT);
@@ -426,9 +427,9 @@ function generateScheduleHTML({ members = [], schedule = [], dates = {}, theme =
       /* ② 아바타 — 제목 구역 오른쪽 하단 정렬. 카드 클립에 의존하지 않게 완전히 안쪽에 배치
          (overflow 제거돼도 카드 밖으로 안 나감). */
       const avatar = avS
-        ? `<img src="${escapeAttr(img)}" alt="" style="width:${avS}px;height:${avS}px;object-fit:cover;` +
+        ? `<img src="${escapeAttr(img)}" alt="" style="width:${avS}px;height:${titleZoneH}px;object-fit:cover;` +
           (radius ? `border-radius:8px;` : '') +
-          `display:block;margin-top:${Math.max(0, titleZoneH - avS)}px">`
+          `display:block">`
         : '';
       const bodyZone = avatar
         ? `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;table-layout:fixed"><tr>` +
