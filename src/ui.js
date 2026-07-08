@@ -21,6 +21,7 @@ function el(tag, props = {}, kids = []) {
 const $ = sel => document.querySelector(sel);
 
 /* ── 상수 · 기본값 ── */
+const DEFAULT_CONFIG_WEBHOOK = 'https://script.google.com/macros/s/AKfycbwESjkp3ezrRhzQUwKRoED6-ENE4jsWjxP9cUUb4v210p03qS8i5xvgNP1vu8q6hCW6Dw/exec'; // 기본 저장 웹앱(운영진 공유용, 도구에 내장)
 const STORE = 'cafe_schedule_v3'; // v3: 시트 중심 무상태 캐시 (v2 이하 로컬 상태는 버림)
 const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const C = { accent: '#C0432A', paper: '#F6F4EF', hair: '#E2DED5', ink: '#1C1B19', sub: '#7A756B' };
@@ -91,7 +92,7 @@ function boot() {
     weeks,
     weekIdx: Math.min(typeof cached.weekIdx === 'number' ? cached.weekIdx : weeks.length - 1, weeks.length - 1),
     sheetId: cached.sheetId || ('https://docs.google.com/spreadsheets/d/' + DEFAULT_SHEET_ID + '/edit'),
-    configWebhook: cached.configWebhook || '',
+    configWebhook: cached.configWebhook || DEFAULT_CONFIG_WEBHOOK,
     section: 'main', selId: null,
     sync: '캐시', // '시트' | '캐시' | '오프라인' | '동기화 중…'
   };
