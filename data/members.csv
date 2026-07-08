@@ -1,8 +1,8 @@
-id,멤버,배경색,글자색,기본URL
-choiaeri,최애리,#F2A93B,#FFFFFF,
-yeowooyeon,여우연,#8AB4F8,#FFFFFF,
-nano,나노,#B7BBC0,#202124,
-nunyo,눈요,#7FD6EB,#FFFFFF,
-seolhong,설홍,#FF5A5A,#FFFFFF,
-ruchel,루첼,#4A4A4A,#FFFFFF,
-bayblue,베이블루,#3A56C5,#FFFFFF,
+id,멤버,배경색,글자색,기본URL,이미지URL
+choiaeri,최애리,#F2A93B,#FFFFFF,https://www.sooplive.com/station/cherru,https://drive.google.com/file/d/1fV6U-ObO6hv1yj58JAhYjw_TwqtiPMj3/view?usp=drive_link
+yeowooyeon,여우연,#8AB4F8,#FFFFFF,https://www.sooplive.com/station/foxyeon,https://drive.google.com/file/d/1qLcU3LZdGV2PnjXqGYy2ZOKzwGOMukt9/view?usp=drive_link
+nano,나노,#B7BBC0,#202124,https://www.sooplive.com/station/peperopero55,https://drive.google.com/file/d/1LCxY7ZkWBy7D9IgKsEx_4QINjNbneQX2/view?usp=drive_link
+nunyo,눈요,#7FD6EB,#FFFFFF,https://www.sooplive.com/station/noonyo,https://drive.google.com/file/d/1z6eWL4F7zziMAyDpF70jDjki47N5ffLn/view?usp=drive_link
+seolhong,설홍,#FF5A5A,#FFFFFF,https://www.sooplive.com/station/lighthoong,https://drive.google.com/file/d/1Hu6K_VZS9xkjgDoeYaRun95brUUhIrYD/view?usp=drive_link
+ruchel,루첼,#4A4A4A,#FFFFFF,https://www.sooplive.com/station/ausdurfurwpf,https://drive.google.com/file/d/1HijayfTlzCXU-lBCO4EQ6VmXpLFRbSU_/view?usp=drive_link
+bayblue,베이블루,#3A56C5,#FFFFFF,https://www.sooplive.com/station/vablue,https://drive.google.com/file/d/1j328MhZ-jBF24O8GbLtATcxQq76dFGo6/view?usp=drive_link

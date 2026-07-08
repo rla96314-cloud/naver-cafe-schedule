@@ -31,7 +31,7 @@ const inp = 'padding:7px 10px;border:1px solid var(--hair);border-radius:8px;fon
 /* 시트 members 탭이 없을 때의 폴백. id = 이름(시트와 동일 규칙). */
 function fallbackMembers() {
   return parseCSVObjects(DEFAULT_MEMBERS_CSV).map(r => ({
-    id: r.멤버, name: r.멤버, bg: r.배경색, fg: r.글자색, url: r.기본URL || '', img: '',
+    id: r.멤버, name: r.멤버, bg: r.배경색, fg: r.글자색, url: r.기본URL || '', img: r.이미지URL || '',
   }));
 }
 const THEME_DEFAULT = {
@@ -73,12 +73,18 @@ function boot() {
   // 포스터 룩(pv:1) 이전 캐시: 비주얼 키를 지워 새 기본값(둥근 포스터)을 받게 함
   if ((cachedTheme.pv || 0) < THEME_DEFAULT.pv) {
     for (const k of ['cardHeight', 'radius', 'titleFont', 'linkUnderline']) delete cachedTheme[k];
-    // 폴백 멤버 글자색도 옛 캐시(어두운 fg)면 새 기본으로 — 시트 members 탭이 있으면 어차피 시트가 이김
-    if (cached.membersSource !== 'sheet' && Array.isArray(cached.members)) delete cached.members;
+    // (과거 여기서 cached.members를 지웠던 게 사용자 설정 유실 사고 — 멤버는 절대 안 지움)
     cachedTheme.pv = THEME_DEFAULT.pv;
   }
   return {
-    members: cached.members && cached.members.length ? cached.members : fallbackMembers(),
+    members: (() => { // 캐시 멤버 유지하되, 빈 url/img는 기본값(CSV)에서 보충
+      const fb = fallbackMembers();
+      if (!cached.members || !cached.members.length) return fb;
+      return cached.members.map(m => {
+        const f = fb.find(x => x.name === m.name);
+        return f ? { ...m, url: m.url || f.url, img: m.img || f.img } : m;
+      });
+    })(),
     membersSource: cached.membersSource === 'sheet' ? 'cache' : 'default',
     theme: { ...THEME_DEFAULT, ...cachedTheme },
     weeks,
