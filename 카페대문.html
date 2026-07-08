@@ -1159,15 +1159,22 @@ function inspector() {
   const memSel = el('select', { style: inp + ';width:96px', onchange: e => { sel.mem = e.target.value; touch(); } }, S.members.map(m => el('option', { value: m.id }, m.name)));
   memSel.value = sel.mem;
   // 이 카드만의 제목 폰트 크기(px). 비우면 테마 기본. −/＋ 스텝퍼.
-  const sizeLbl = el('span', { style: 'font-size:12px;font-weight:700;min-width:34px;text-align:center;color:var(--accent)' },
-    sel.titleSize > 0 ? sel.titleSize + 'px' : '기본');
-  const setSize = v => {
-    sel.titleSize = v > 0 ? v : 0;
-    sizeLbl.textContent = sel.titleSize > 0 ? sel.titleSize + 'px' : '기본';
-    touch();
+  const sizeLbl = el('span', { style: 'font-size:12px;font-weight:700;min-width:44px;text-align:center;color:var(--accent)' }, '');
+  // 라벨 = 실제 렌더 크기. 설정값이 상·하한에 걸려 다르게 그려지면 "설정→실제"로 정직하게 표시.
+  const paintSizeLbl = () => {
+    const t = document.querySelector(`#pv-render [data-eid="${sel.id}"] .schd-title`);
+    const eff = t ? Math.round(parseFloat(t.style.fontSize)) : null;
+    if (!(sel.titleSize > 0)) sizeLbl.textContent = eff ? `기본(${eff})` : '기본';
+    else sizeLbl.textContent = (eff && eff !== sel.titleSize) ? `${sel.titleSize}→${eff}px` : sel.titleSize + 'px';
   };
-  const stepBtn = (txt, d) => el('button', { style: btn + ';padding:6px 9px;font-size:13px', title: '이 카드 제목 크기',
-    onclick: () => setSize(Math.max(0, Math.min(24, (sel.titleSize > 0 ? sel.titleSize : S.theme.titleFont) + d))) }, txt);
+  const setSize = v => {
+    sel.titleSize = v > 0 ? Math.max(7, Math.min(24, v)) : 0; // 렌더 유효범위(7~24)로 라벨·값 일치
+    touch();
+    paintSizeLbl();
+  };
+  const stepBtn = (txt, d) => el('button', { style: btn + ';padding:6px 9px;font-size:13px', title: '이 카드 제목 크기 (7~24px)',
+    onclick: () => setSize(Math.max(7, Math.min(24, (sel.titleSize > 0 ? sel.titleSize : S.theme.titleFont) + d))) }, txt);
+  setTimeout(paintSizeLbl, 0); // 인스펙터 열릴 때 현재 실제값 표시
   // 자동 맞춤: … 없이 제목이 전부 보이는 "가장 큰" 크기를 실제 생성 파이프라인으로 탐색.
   const autoFit = () => {
     const orig = String(sel.title || '').replace(/\s+/g, '');
