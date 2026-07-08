@@ -192,6 +192,8 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
     header:'', subtitle:'', logo:'', linkUnderline:false, fontScale:1,
     cardHeight:60, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:11, oneLineMin:10,
+    pillFont:0 /* 0=이름의 0.8배 */, nameWeight:800, pillWeight:800, titleWeight:400,
+    nameFamily:'', pillFamily:'', titleFamily:'' /* ''=테마 폰트 따름 */,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -224,14 +226,19 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const PILL_R = 0.8;
   const autoF = Math.floor((COL_CONTENT - ZONE_GAP) / (maxNameLen * 0.93 + PILL_R * (maxTimeLen * 0.56 + 0.72)));
   const nameF = (+t.nameFont > 0) ? +t.nameFont : Math.max(9, Math.min(40, autoF)); // ③ 고정(축소 없음)
-  const pillF = Math.max(8, Math.round(nameF * PILL_R));                              // ④ 이름의 0.8배
+  const nameZoneH = Math.round(nameF * 1.25);
+  // ④ 시간 크기: 명시(pillFont)면 그것(이름 구역 높이에 캡), 아니면 이름의 0.8배
+  const pillF = (+t.pillFont > 0)
+    ? Math.max(7, Math.min(+t.pillFont, nameZoneH - 3))
+    : Math.max(8, Math.round(nameF * PILL_R));
   const titleF = Math.max(8, Math.round((+t.titleFont || 11) * sc));                  // ⑤ (fontScale 적용)
   const pillW = Math.ceil(pillF * (maxTimeLen * 0.62 + 0.7)) + 2;                     // ④ 구역 = 딱 필요한 폭
-  const nameZoneH = Math.round(nameF * 1.25);
   const cardH = (+t.cardHeight > 0) ? +t.cardHeight
     : nameZoneH + Math.round(titleF * 2.6) + PAD_V * 2 + ZONE_GAP;
   const titleZoneH = Math.max(0, cardH - PAD_V * 2 - nameZoneH - ZONE_GAP);
   const fontStack = FONT[t.font] || FONT.Pretendard;
+  // 요소별 글꼴 오버라이드('' = 테마 폰트 따름)
+  const fam = key => (key && FONT[key]) ? `font-family:${FONT[key]};` : '';
   const bg = BG[t.bg] || BG.흰색;
   const dark = bg.dark;
   const align = t.align === '가운데' ? 'center' : 'left';
@@ -294,9 +301,9 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       `<span style="display:inline-block;background:${pillBg};color:${pillFg};` +
       (radius ? `border-radius:${Math.round(nameZoneH / 2)}px;` : '') +
       `padding:0 ${Math.round(pillF * 0.25)}px;font-size:${pillF}px;line-height:${nameZoneH}px;` +
-      `font-weight:800;white-space:nowrap">${timeTxt}</span>`;
+      `font-weight:${+t.pillWeight || 800};${fam(t.pillFamily)}white-space:nowrap">${timeTxt}</span>`;
     /* ③ 이름 — 폰트 고정(nameF), nowrap, 구역 밖으로 못 나감 */
-    const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
+    const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};font-weight:${+t.nameWeight || 800};${fam(t.nameFamily)}white-space:nowrap">${escapeHtml(m.name)}</b>`;
 
     /* ⑤ 제목 — ★네이버가 overflow:hidden과 word-break:keep-all을 제거함(대문 실측).
        클립에 기대지 않고 생성 단계에서 fitLines로 줄을 확정(<br>)·잘라냄(…).
@@ -306,6 +313,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     //  - 없으면 ★스마트 자동: 테마 크기(titleF)에서 시작해 제목 전문이 …없이
     //    들어가는 가장 큰 크기를 7px까지 내려가며 선택. 다 들어가면 테마 크기 유지(통일감).
     const zoneCap = Math.max(7, Math.floor(titleZoneH / 1.2));
+    const wBold = (+t.titleWeight >= 700) ? 0.96 : 1; // 굵은 제목은 실폭 ~4% 넓음 → 보정
     const autoTitleW = narrow
       ? Math.max(20, Math.floor((COL_CONTENT + PAD_H * 2) * 0.49) - PAD_H * 2)
       : ((img && !narrow) ? COL_CONTENT - myPillW - ZONE_GAP : COL_CONTENT);
@@ -318,7 +326,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
         // ①한 줄 우선: 제목 전체가 한 줄에 들어가는 최대 크기가 oneLineMin 이상이면 채택
         const olMin = Math.max(7, +t.oneLineMin || 10);
         const u = textUnits(String(c.title).trim().replace(/\s+/g, ' '));
-        const olMax = Math.floor((autoTitleW * 0.98) / u);
+        const olMax = Math.floor((autoTitleW * wBold * 0.98) / u);
         if (olMax >= olMin) {
           tF = Math.min(olMax, Math.min(titleF + 1, zoneCap)); // 테마+1까지만(들쭉날쭉 방지)
           oneLine = true;
@@ -326,7 +334,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
           // ②기존: …없이 들어가는 최대 크기(여러 줄 허용)
           for (let f = Math.min(titleF, zoneCap); f >= 7; f--) {
             const ml = Math.max(1, Math.floor(titleZoneH / Math.round(f * 1.2)));
-            if (!fitLinesInfo(c.title, autoTitleW, f, ml).trunc) { tF = f; break; }
+            if (!fitLinesInfo(c.title, autoTitleW * wBold, f, ml).trunc) { tF = f; break; }
             tF = 7; // 7px로도 안 들어가면 최소 크기에서 … 처리
           }
         }
@@ -343,13 +351,13 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       if (!c.title) return '';
       if (oneLine) {
         const one = escapeHtml(String(c.title).trim().replace(/\s+/g, ' '));
-        return link(`<span class="schd-title" style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg};white-space:nowrap">${one}</span>`);
+        return link(`<span class="schd-title" style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg};font-weight:${+t.titleWeight || 400};${fam(t.titleFamily)}white-space:nowrap">${one}</span>`);
       }
-      const lines = fitLines(c.title, titleW, tF, titleMaxLines(h));
+      const lines = fitLines(c.title, titleW * wBold, tF, titleMaxLines(h));
       const htmlLines = lines.map(ln =>
         ln.split(' ').map(w => `<span style="white-space:nowrap">${escapeHtml(w)}</span>`).join(' ')
       ).join('<br>');
-      return link(`<span class="schd-title" style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg}">${htmlLines}</span>`);
+      return link(`<span class="schd-title" style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg};font-weight:${+t.titleWeight || 400};${fam(t.titleFamily)}">${htmlLines}</span>`);
     };
 
     /* 구역 div에 font-size·line-height를 박아 넣는다 — 안 하면 inline <a>의 스트럿이

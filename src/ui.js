@@ -38,7 +38,8 @@ const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
   fontSize: '보통', fontScale: 1, cardHeight: 60, nameFont: 0, titleFont: 11, radius: 16,
   bg: '흰색', linkUnderline: false, collision: '좌우', align: '왼쪽',
-  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', oneLineMin: 10, pv: 2, // pv = 포스터 룩 버전(캐시 마이그레이션용)
+  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', oneLineMin: 10,
+  pillFont: 0, nameWeight: 800, pillWeight: 800, titleWeight: 400, nameFamily: '', pillFamily: '', titleFamily: '', pv: 2, // pv = 포스터 룩 버전(캐시 마이그레이션용)
 };
 const PRESETS = {
   '둥근 포스터(기본)': { radius: 16, cardHeight: 60, nameFont: 0, titleFont: 11 },
@@ -468,6 +469,22 @@ function toHex(c) {
   if (/^#[0-9a-fA-F]{3}$/.test(c)) return '#' + c.slice(1).split('').map(x => x + x).join('');
   return '#888888';
 }
+
+/* 요소(이름/시간/제목)별 글꼴·크기·굵기 컨트롤 한 줄 */
+function elemTypo(famKey, sizeKey, weightKey, sizeMin, sizeMax, sizeZeroLabel) {
+  const famSel = el('select', { style: inp + ';width:104px;font-size:12px', onchange: e => { S.theme[famKey] = e.target.value; save(); render(); } },
+    [el('option', { value: '' }, '테마 폰트'),
+     ...['Pretendard', '나눔고딕', '검은고딕'].map(f => el('option', { value: f }, f))]);
+  famSel.value = S.theme[famKey] || '';
+  const sz = slider(S.theme[sizeKey] || 0, sizeMin, sizeMax, 1,
+    v => v ? v + 'px' : (sizeZeroLabel || '자동'),
+    v => { S.theme[sizeKey] = v; save(); });
+  const wt = seg(+S.theme[weightKey] || (weightKey === 'titleWeight' ? 400 : 800),
+    [{ v: 400, label: '보통' }, { v: 600, label: '중간' }, { v: 800, label: '굵게' }],
+    v => { S.theme[weightKey] = v; save(); render(); });
+  return el('div', { style: 'display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap' }, [famSel, sz, wt]);
+}
+
 function seg(value, options, onChange) {
   const wrap = el('div', { style: 'display:inline-flex;background:#ECE8E0;border-radius:9px;padding:3px;gap:3px;flex-wrap:wrap' });
   for (const o of options) {
@@ -495,6 +512,8 @@ function configTSV() {
     ['헤더', t.header || ''], ['배지', t.subtitle || ''], ['로고', t.logo || ''],
     ['카드높이', t.cardHeight], ['모서리', t.radius],
     ['이름폰트', t.nameFont || 0], ['제목폰트', t.titleFont],
+    ['시간크기', t.pillFont || 0], ['이름굵기', t.nameWeight], ['시간굵기', t.pillWeight], ['제목굵기', t.titleWeight],
+    ['이름글꼴', t.nameFamily || ''], ['시간글꼴', t.pillFamily || ''], ['제목글꼴', t.titleFamily || ''], ['한줄우선', t.oneLineMin],
     ['링크밑줄', t.linkUnderline ? '표시' : '없음'], ['배경', t.bg],
     ['시간표기', t.timeFmt], ['제목줄바꿈', t.wrap], ['정렬', t.align],
   ];
@@ -556,8 +575,9 @@ function settingsView() {
       row('헤더', el('input', { value: S.theme.header, style: inp + ';flex:1', oninput: e => { S.theme.header = e.target.value; save(); } })),
       row('배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 없음', oninput: e => { S.theme.subtitle = e.target.value; save(); } })),
       row('로고 URL', el('input', { value: S.theme.logo || '', class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: 'https://… (외부만)', oninput: e => { S.theme.logo = e.target.value.trim(); save(); } })),
-      row('이름·시간 폰트', slider(S.theme.nameFont, 0, 40, 1, v => v ? v + 'px' : '자동(최대)', v => { S.theme.nameFont = v; save(); })),
-      row('제목 폰트', slider(S.theme.titleFont, 8, 30, 1, v => v + 'px', v => { S.theme.titleFont = v; save(); })),
+      row('이름', elemTypo('nameFamily', 'nameFont', 'nameWeight', 0, 40, '자동(최대)')),
+      row('시간', elemTypo('pillFamily', 'pillFont', 'pillWeight', 0, 20, '자동(0.8×)')),
+      row('제목', elemTypo('titleFamily', 'titleFont', 'titleWeight', 7, 30, '')),
       row('한줄 우선', seg(S.theme.oneLineMin, [{ v: 99, label: '끔' }, { v: 9, label: '9px↑' }, { v: 10, label: '10px↑' }, { v: 11, label: '11px↑' }], v => { S.theme.oneLineMin = v; save(); render(); })),
       row('제목 줄바꿈', seg(S.theme.wrap, [{ v: '자동', label: '줄바꿈' }, { v: '말줄임', label: '한 줄(…)' }], v => { S.theme.wrap = v; save(); render(); })),
       row('카드 높이', slider(S.theme.cardHeight, 40, 200, 4, v => v + 'px', v => { S.theme.cardHeight = v; save(); })),
@@ -565,7 +585,7 @@ function settingsView() {
       row('배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => { S.theme.bg = v; save(); render(); })),
       row('링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '표시' }, { v: false, label: '없음' }], v => { S.theme.linkUnderline = v; save(); render(); })),
       row('시간 표기', seg(S.theme.timeFmt, ['AM/PM', '24시'].map(v => ({ v, label: v })), v => { S.theme.timeFmt = v; save(); render(); })),
-      row('폰트', seg(S.theme.font, ['Pretendard', '나눔고딕', '검은고딕'].map(v => ({ v, label: v })), v => { S.theme.font = v; save(); render(); })),
+      row('기본 폰트', seg(S.theme.font, ['Pretendard', '나눔고딕', '검은고딕'].map(v => ({ v, label: v })), v => { S.theme.font = v; save(); render(); })),
     ]),
   ]);
   const copyCfgBtn = el('button', { style: btn, onclick: () => {

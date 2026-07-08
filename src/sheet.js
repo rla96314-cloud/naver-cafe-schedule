@@ -183,6 +183,10 @@ export const CONFIG_KEYS = {
   헤더: { k: 'header' }, 배지: { k: 'subtitle' }, 로고: { k: 'logo' },
   카드높이: { k: 'cardHeight', num: 1 }, 모서리: { k: 'radius', num: 1 },
   이름폰트: { k: 'nameFont', num: 1 }, 제목폰트: { k: 'titleFont', num: 1 },
+  시간크기: { k: 'pillFont', num: 1 }, 이름굵기: { k: 'nameWeight', num: 1 },
+  시간굵기: { k: 'pillWeight', num: 1 }, 제목굵기: { k: 'titleWeight', num: 1 },
+  이름글꼴: { k: 'nameFamily' }, 시간글꼴: { k: 'pillFamily' }, 제목글꼴: { k: 'titleFamily' },
+  한줄우선: { k: 'oneLineMin', num: 1 },
   링크밑줄: { k: 'linkUnderline', bool: 1 }, 배경: { k: 'bg' },
   시간표기: { k: 'timeFmt' }, 제목줄바꿈: { k: 'wrap' }, 정렬: { k: 'align' },
 };
