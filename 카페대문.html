@@ -1400,35 +1400,40 @@ function configRows() {
 function configTSV() { return configRows().map(r => r.join('\t')).join('\n'); }
 
 /* 웹앱(Apps Script)으로 config 탭 직접 저장. no-cors 전송 후 gviz로 반영 확인. */
-async function saveConfigToSheet(btn) {
+function membersRows() {
+  const rows = [['멤버', '배경색', '글자색', '채널URL', '이미지URL']];
+  for (const m of S.members) rows.push([m.name, m.bg, m.fg, m.url || '', m.img || '']);
+  return rows;
+}
+async function saveConfigToSheet(btn, withMembers) {
   const url = (S.configWebhook || '').trim();
   if (!/^https:\/\/script\.google\.com\/macros\//.test(url)) {
     alert('먼저 "저장 웹앱 URL"을 넣어줘요.\n(시트 확장→Apps Script에 apps-script-config-writer.gs 배포 후 나온 주소)');
     return;
   }
+  const payload = { config: configRows() };
+  if (withMembers) payload.members = membersRows();
   const orig = btn.textContent; btn.disabled = true; btn.textContent = '저장 중…';
   try {
     // Apps Script 웹앱은 CORS 프리플라이트를 못 받음 → text/plain + no-cors로 전송(응답은 못 읽음)
-    await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(configRows()) });
+    await fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
     // 확인: 잠시 후 gviz로 config 탭을 다시 읽어 카드높이가 일치하면 성공
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1600));
     let okConfirmed = false;
     try { const c = await loadConfigTab(S.sheetId); okConfirmed = String(c.cardHeight) === String(S.theme.cardHeight); } catch {}
+    if (okConfirmed && withMembers) S.membersSource = 'sheet'; // 시트가 원본이 됨
     btn.textContent = okConfirmed ? '시트에 저장됨 ✓' : '전송함(확인 대기)';
     btn.style.background = '#2E7D5B';
+    save();
   } catch (e) {
     alert('저장 실패: ' + e.message + '\n웹앱 배포의 "액세스: 모든 사용자"인지 확인해줘요.');
     btn.textContent = orig;
   } finally {
     btn.disabled = false;
-    setTimeout(() => { btn.textContent = '설정을 시트에 저장 (전원 반영)'; btn.style.background = C.accent; }, 2000);
+    setTimeout(() => { btn.textContent = orig; btn.style.background = C.accent; }, 2200);
   }
 }
-function membersTSV() {
-  const rows = [['멤버', '배경색', '글자색', '채널URL', '이미지URL']];
-  for (const m of S.members) rows.push([m.name, m.bg, m.fg, m.url || '', m.img || '']);
-  return rows.map(r => r.join('\t')).join('\n');
-}
+function membersTSV() { return membersRows().map(r => r.join('\t')).join('\n'); }
 let _setTab = 'typo'; // 설정창 활성 탭 (세션 유지)
 function settingsView() {
   const outer = el('div', { style: 'flex:1;min-height:0;display:flex' });
@@ -1513,17 +1518,21 @@ function settingsView() {
         el('button', { style: btn, onclick: () => syncFromSheet({ full: true }) }, '전체 다시 불러오기'),
       ]),
     ]));
-    // (A) 자동 저장 — 웹앱 있으면 버튼 한 번으로 config 탭 갱신
-    const saveBtn = el('button', { style: btnPrimary, onclick: () => saveConfigToSheet(saveBtn) }, '설정을 시트에 저장 (전원 반영)');
+    // (A) 자동 저장 — 웹앱 있으면 버튼 한 번으로 config(+members) 탭 갱신
+    const memChk = el('input', { type: 'checkbox' });
+    const saveBtn = el('button', { style: btnPrimary, onclick: () => saveConfigToSheet(saveBtn, memChk.checked) }, '설정을 시트에 저장 (전원 반영)');
     wrap.append(section('설정을 시트에 저장 (버튼 한 번)', [
       el('div', { style: 'display:flex;gap:8px;align-items:center' }, [
         el('span', { style: 'font-size:12px;color:var(--sub);flex-shrink:0' }, '저장 웹앱 URL'),
         el('input', { value: S.configWebhook || '', class: 'mono', style: inp + ';flex:1;font-size:11.5px', placeholder: 'https://script.google.com/macros/s/…/exec',
           oninput: e => { S.configWebhook = e.target.value.trim(); save(); } }),
       ]),
+      el('label', { style: 'display:flex;gap:6px;align-items:center;font-size:12px;color:var(--sub);cursor:pointer' }, [
+        memChk, '멤버(색·URL·이미지)도 함께 저장',
+      ]),
       saveBtn,
       el('div', { style: 'font-size:11.5px;color:var(--sub);line-height:1.6' },
-        '한 번만 설치: 시트 → 확장 프로그램 → Apps Script에 apps-script-config-writer.gs 붙여넣고 "웹 앱(모든 사용자)"로 배포 → 나온 주소를 위에 붙여넣기. 이후 버튼만 누르면 config 탭이 갱신돼요.'),
+        '한 번만 설치: 시트 → 확장 프로그램 → Apps Script에 apps-script-config-writer.gs 붙여넣고 "웹 앱(모든 사용자)"로 배포 → 나온 주소를 위에 붙여넣기. 이후 버튼만 누르면 config(+선택 시 members) 탭이 갱신돼요.'),
     ]));
     // (B) 수동 폴백 — 웹앱 설치 전이라도 복사→붙여넣기
     const copyCfgBtn = el('button', { style: btn, onclick: () => {
