@@ -369,10 +369,26 @@ function inspector() {
   daySel.value = sel.day;
   const memSel = el('select', { style: inp + ';width:96px', onchange: e => { sel.mem = e.target.value; touch(); } }, S.members.map(m => el('option', { value: m.id }, m.name)));
   memSel.value = sel.mem;
+  // 이 카드만의 제목 폰트 크기(px). 비우면 테마 기본. −/＋ 스텝퍼.
+  const sizeLbl = el('span', { style: 'font-size:12px;font-weight:700;min-width:34px;text-align:center;color:var(--accent)' },
+    sel.titleSize > 0 ? sel.titleSize + 'px' : '기본');
+  const setSize = v => {
+    sel.titleSize = v > 0 ? v : 0;
+    sizeLbl.textContent = sel.titleSize > 0 ? sel.titleSize + 'px' : '기본';
+    touch();
+  };
+  const stepBtn = (txt, d) => el('button', { style: btn + ';padding:6px 9px;font-size:13px', title: '이 카드 제목 크기',
+    onclick: () => setSize(Math.max(0, Math.min(24, (sel.titleSize > 0 ? sel.titleSize : S.theme.titleFont) + d))) }, txt);
+  const sizeCtl = el('span', { style: 'display:inline-flex;align-items:center;gap:3px;flex-shrink:0', title: '이 카드만의 제목 폰트 크기' }, [
+    el('span', { style: 'font-size:11px;color:var(--sub)' }, '제목크기'),
+    stepBtn('−', -1), sizeLbl, stepBtn('＋', +1),
+    el('button', { style: btn + ';padding:6px 8px;font-size:11px', title: '테마 기본으로', onclick: () => setSize(0) }, '↺'),
+  ]);
   box.append(
     daySel, memSel,
     el('input', { value: sel.time, style: inp + ';width:70px', placeholder: '9AM', oninput: e => { sel.time = e.target.value; touch(); } }),
     el('input', { value: sel.title, style: inp + ';flex:1;min-width:0', placeholder: '방송 제목', oninput: e => { sel.title = e.target.value; touch(); } }),
+    sizeCtl,
     el('input', { value: sel.url || '', class: 'mono', style: inp + ';flex:1;min-width:0;font-size:12px', placeholder: '링크 (비우면 멤버 채널URL)', oninput: e => { sel.url = e.target.value; touch(); } }),
     el('button', { style: btn + ';color:#C0392B', onclick: () => { w.schedule = w.schedule.filter(x => x.id !== sel.id); w.dirty = true; S.selId = null; render(); } }, '삭제'),
     el('button', { style: btn, onclick: () => { S.selId = null; render(); } }, '닫기'),

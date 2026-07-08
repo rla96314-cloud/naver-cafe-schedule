@@ -292,7 +292,13 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     /* ⑤ 제목 — ★네이버가 overflow:hidden과 word-break:keep-all을 제거함(대문 실측).
        클립에 기대지 않고 생성 단계에서 fitLines로 줄을 확정(<br>)·잘라냄(…).
        단어는 nowrap span으로 감아(알약으로 생존 증명) 글자 단위 쪼개짐 방지. */
-    const lineH = Math.round(titleF * 1.2);
+    // 카드별 제목 폰트: 항목에 titleSize가 있으면 테마 기본(titleF) 대신 사용.
+    // 한 줄도 안 들어갈 만큼 크면 구역을 넘으므로(네이버는 클립 안 함) 구역 높이에 맞춰 상한.
+    const tF = Math.min(
+      (+c.titleSize > 0) ? Math.max(7, +c.titleSize) : titleF,
+      Math.max(7, Math.floor(titleZoneH / 1.2))
+    );
+    const lineH = Math.round(tF * 1.2);
     // ② 아바타 폭 = ④시간 알약 구역 폭(pillW) — 오른쪽이 알약→아바타 한 기둥으로 정렬됨
     const avS = (!narrow && img) ? pillW : 0;
     const titleW = narrow
@@ -301,18 +307,18 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const titleMaxLines = h => (t.wrap === '말줄임') ? 1 : Math.max(1, Math.floor(h / lineH));
     const titleHtmlFor = h => {
       if (!c.title) return '';
-      const lines = fitLines(c.title, titleW, titleF, titleMaxLines(h));
+      const lines = fitLines(c.title, titleW, tF, titleMaxLines(h));
       const htmlLines = lines.map(ln =>
         ln.split(' ').map(w => `<span style="white-space:nowrap">${escapeHtml(w)}</span>`).join(' ')
       ).join('<br>');
-      return link(`<span style="font-size:${titleF}px;line-height:${lineH}px;color:${m.fg}">${htmlLines}</span>`);
+      return link(`<span style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg}">${htmlLines}</span>`);
     };
 
     /* 구역 div에 font-size·line-height를 박아 넣는다 — 안 하면 inline <a>의 스트럿이
        기본 16px 폰트를 상속해 줄박스가 구역보다 커진다(실측). overflow:hidden은
        미리보기 보험용으로 남기되 동작이 그것에 의존하지 않는다. */
     const nameZone = `height:${nameZoneH}px;overflow:hidden;white-space:nowrap;font-size:${nameF}px;line-height:${nameZoneH}px`;
-    const titleZone = h => `height:${h}px;overflow:hidden;text-align:${align};font-size:${titleF}px;line-height:${lineH}px`;
+    const titleZone = h => `height:${h}px;overflow:hidden;text-align:${align};font-size:${tF}px;line-height:${lineH}px`;
 
     let body;
     if (narrow) {
