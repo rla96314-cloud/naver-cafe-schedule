@@ -118,6 +118,10 @@ function chUnit(ch) {
 function textUnits(s) { let u = 0; for (const ch of String(s)) u += chUnit(ch); return u; }
 /* 텍스트를 폭(px)·폰트·최대줄수에 맞춰 줄 배열로. 넘치면 잘라내고 마지막에 … */
 export function fitLines(text, widthPx, fontPx, maxLines) {
+  return fitLinesInfo(text, widthPx, fontPx, maxLines).lines;
+}
+/* fitLines + 잘렸는지(trunc) 여부 — 자동 크기 탐색용 */
+export function fitLinesInfo(text, widthPx, fontPx, maxLines) {
   const perLine = Math.max(1, (widthPx / fontPx) * 0.92);
   const words = String(text || '').split(/\s+/).filter(Boolean);
   const lines = [];
@@ -147,7 +151,7 @@ export function fitLines(text, widthPx, fontPx, maxLines) {
     while (last && textUnits(last) + 0.55 > perLine) last = last.slice(0, -1);
     lines[lines.length - 1] = (last || '').replace(/\s+$/, '') + '…';
   }
-  return lines;
+  return { lines, trunc };
 }
 
 /* HTML 이스케이프 — 제목에 <,>,& 들어가도 안 깨지게. */
@@ -292,12 +296,27 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     /* ⑤ 제목 — ★네이버가 overflow:hidden과 word-break:keep-all을 제거함(대문 실측).
        클립에 기대지 않고 생성 단계에서 fitLines로 줄을 확정(<br>)·잘라냄(…).
        단어는 nowrap span으로 감아(알약으로 생존 증명) 글자 단위 쪼개짐 방지. */
-    // 카드별 제목 폰트: 항목에 titleSize가 있으면 테마 기본(titleF) 대신 사용.
-    // 한 줄도 안 들어갈 만큼 크면 구역을 넘으므로(네이버는 클립 안 함) 구역 높이에 맞춰 상한.
-    const tF = Math.min(
-      (+c.titleSize > 0) ? Math.max(7, +c.titleSize) : titleF,
-      Math.max(7, Math.floor(titleZoneH / 1.2))
-    );
+    // 카드별 제목 폰트.
+    //  - 수동값(titleSize)이 있으면 그것(구역 높이 상한만 적용)
+    //  - 없으면 ★스마트 자동: 테마 크기(titleF)에서 시작해 제목 전문이 …없이
+    //    들어가는 가장 큰 크기를 7px까지 내려가며 선택. 다 들어가면 테마 크기 유지(통일감).
+    const zoneCap = Math.max(7, Math.floor(titleZoneH / 1.2));
+    const autoTitleW = narrow
+      ? Math.max(20, Math.floor((COL_CONTENT + PAD_H * 2) * 0.49) - PAD_H * 2)
+      : ((img && !narrow) ? COL_CONTENT - pillW - ZONE_GAP : COL_CONTENT);
+    let tF;
+    if (+c.titleSize > 0) {
+      tF = Math.min(Math.max(7, +c.titleSize), zoneCap);
+    } else {
+      tF = Math.min(titleF, zoneCap);
+      if (c.title && t.wrap !== '말줄임') {
+        for (let f = Math.min(titleF, zoneCap); f >= 7; f--) {
+          const ml = Math.max(1, Math.floor(titleZoneH / Math.round(f * 1.2)));
+          if (!fitLinesInfo(c.title, autoTitleW, f, ml).trunc) { tF = f; break; }
+          tF = 7; // 7px로도 안 들어가면 최소 크기에서 … 처리
+        }
+      }
+    }
     const lineH = Math.round(tF * 1.2);
     // ② 아바타 폭 = ④시간 알약 구역 폭(pillW) — 오른쪽이 알약→아바타 한 기둥으로 정렬됨
     const avS = (!narrow && img) ? pillW : 0;
