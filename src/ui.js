@@ -470,19 +470,57 @@ function toHex(c) {
   return '#888888';
 }
 
-/* 요소(이름/시간/제목)별 글꼴·크기·굵기 컨트롤 한 줄 */
-function elemTypo(famKey, sizeKey, weightKey, sizeMin, sizeMax, sizeZeroLabel) {
-  const famSel = el('select', { style: inp + ';width:104px;font-size:12px', onchange: e => { S.theme[famKey] = e.target.value; save(); render(); } },
+/* 요소(이름/시간/제목)별 글꼴·크기·굵기 컨트롤 한 줄.
+   onLive = 슬라이더/드래그(즉시 미리보기만), onStruct = 셀렉트/세그(재렌더). 미지정 시 render 폴백. */
+function elemTypo(famKey, sizeKey, weightKey, sizeMin, sizeMax, sizeZeroLabel, onLive, onStruct) {
+  const live = onLive || (() => { save(); render(); });
+  const struct = onStruct || (() => { save(); render(); });
+  const famSel = el('select', { style: inp + ';width:104px;font-size:12px', onchange: e => { S.theme[famKey] = e.target.value; struct(); } },
     [el('option', { value: '' }, '테마 폰트'),
      ...['Pretendard', '나눔고딕', '검은고딕'].map(f => el('option', { value: f }, f))]);
   famSel.value = S.theme[famKey] || '';
   const sz = slider(S.theme[sizeKey] || 0, sizeMin, sizeMax, 1,
     v => v ? v + 'px' : (sizeZeroLabel || '자동'),
-    v => { S.theme[sizeKey] = v; save(); });
+    v => { S.theme[sizeKey] = v; live(); });
   const wt = seg(+S.theme[weightKey] || (weightKey === 'titleWeight' ? 400 : 800),
     [{ v: 400, label: '보통' }, { v: 600, label: '중간' }, { v: 800, label: '굵게' }],
-    v => { S.theme[weightKey] = v; save(); render(); });
+    v => { S.theme[weightKey] = v; struct(); });
   return el('div', { style: 'display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap' }, [famSel, sz, wt]);
+}
+
+/* 설정창 우측 미리보기 — 대표 4카드(짧은/긴 제목·아바타·충돌)로 지금 테마를 보여줌. */
+function settingsPreviewSample() {
+  const M = S.members, pick = i => M[i % M.length] || M[0];
+  const av = m => m && m.img ? m.img : '';
+  const wk = curWeek();
+  const real = (wk.schedule || []).slice(0, 6);
+  const demo = real.length >= 3 ? real : [
+    { id: 'p1', day: '월', time: '9AM', mem: (pick(0) || {}).id, title: '♥아침 뉴스♥' },
+    { id: 'p2', day: '월', time: '2PM', mem: (pick(2) || {}).id, title: '니케 푹먹데이 스페셜 방송' },
+    { id: 'p3', day: '월', time: '4PM', mem: (pick(1) || {}).id, title: '소통' },
+    { id: 'p4', day: '화', time: '2PM', mem: (pick(3) || {}).id, title: '페스나' },
+    { id: 'p5', day: '화', time: '2PM', mem: (pick(4) || {}).id, title: '노방종' },
+  ];
+  const dates = computeDates(wk.weekStart || '07.06');
+  return simulateNaver(generateScheduleHTML({ members: M, schedule: demo, dates, theme: S.theme }));
+}
+function repaintSettingsPreview() {
+  const host = $('#set-pv-render');
+  if (host) host.innerHTML = settingsPreviewSample();
+}
+function settingsPreviewPane() {
+  const scale = 0.58;
+  return el('div', { style: 'width:470px;flex-shrink:0;border-left:1px solid var(--hair);background:#EEEAE2;display:flex;flex-direction:column' }, [
+    el('div', { style: 'padding:11px 16px;border-bottom:1px solid var(--hair);background:#fff;font-size:12.5px;font-weight:700' }, [
+      '미리보기 ', el('span', { style: 'font-weight:500;color:var(--sub)' }, '= 대문에서 보이는 그대로'),
+    ]),
+    el('div', { style: 'flex:1;overflow:auto;padding:14px' }, [
+      el('div', { style: `border:1px solid var(--hair);border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.07);width:${Math.round(740 * scale) + 2}px;background:#fff` }, [
+        el('div', { id: 'set-pv-render', style: `width:740px;zoom:${scale}`, html: settingsPreviewSample() }),
+      ]),
+      el('div', { style: 'font-size:11px;color:var(--sub);margin-top:8px' }, '이번 주 앞쪽 방송으로 미리봄. 슬라이더는 즉시, 나머지는 손 떼면 반영.'),
+    ]),
+  ]);
 }
 
 function seg(value, options, onChange) {
@@ -524,21 +562,24 @@ function membersTSV() {
   for (const m of S.members) rows.push([m.name, m.bg, m.fg, m.url || '', m.img || '']);
   return rows.map(r => r.join('\t')).join('\n');
 }
+let _setTab = 'typo'; // 설정창 활성 탭 (세션 유지)
 function settingsView() {
-  const wrap = el('div', { style: 'flex:1;overflow-y:auto;padding:18px 22px' });
+  const outer = el('div', { style: 'flex:1;min-height:0;display:flex' });
+  const wrap = el('div', { style: 'flex:1;min-width:0;overflow-y:auto;padding:16px 20px' });
   const srcLabel = { sheet: '시트 members 탭에서 불러옴 ✓', cache: '캐시(이전 시트 값)', default: '기본값 — 시트에 members 탭이 없어요' }[S.membersSource];
 
-  // 시트 연결
-  wrap.append(el('div', { style: 'font-size:17px;font-weight:800;margin-bottom:4px' }, '설정'),
-    el('div', { style: 'font-size:12.5px;color:var(--sub);margin-bottom:14px' }, '영구 설정은 구글시트가 원본이에요(운영진 전원 공유). 여기서 바꾼 건 이 브라우저에만 임시 적용.'));
-  wrap.append(section('시트 연결', [
-    el('div', { style: 'display:flex;gap:8px;align-items:center' }, [
-      el('input', { value: S.sheetId, class: 'mono', style: inp + ';flex:1;font-size:12px', oninput: e => { S.sheetId = e.target.value; save(); } }),
-      el('button', { style: btn, onclick: () => syncFromSheet({ full: true }) }, '전체 다시 불러오기'),
-    ]),
-  ]));
+  // ── 설정 탭 바 ──
+  const TABS = [{ id: 'typo', label: '글꼴·크기' }, { id: 'card', label: '카드·색' }, { id: 'members', label: '멤버' }, { id: 'sheet', label: '시트·저장' }];
+  const tabBar = el('div', { style: 'display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--hair)' },
+    TABS.map(tb => {
+      const on = _setTab === tb.id;
+      return el('button', { style: `padding:8px 14px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:${on ? 800 : 600};` +
+        `color:${on ? C.accent : C.sub};border-bottom:2px solid ${on ? C.accent : 'transparent'};margin-bottom:-1px`,
+        onclick: () => { _setTab = tb.id; render(); } }, tb.label);
+    }));
+  wrap.append(tabBar);
 
-  // 멤버
+  // ── 멤버 행 (멤버 탭에서 사용) ──
   const memRows = S.members.map(m => {
     const preview = el('span', { style: `display:inline-flex;align-items:center;justify-content:center;width:54px;height:30px;border-radius:6px;flex-shrink:0;font-size:12px;font-weight:800;background:${m.bg};color:${m.fg}` }, m.name);
     return el('div', { style: 'display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff;border:1px solid var(--hair);border-radius:10px' }, [
@@ -553,56 +594,72 @@ function settingsView() {
         oninput: e => { m.img = e.target.value; refreshTag(); } }),
     ]);
   });
-  function refreshTag() { S.membersSource = 'local'; save(); }
-  const copyTsvBtn = el('button', { style: btn, onclick: () => {
-    navigator.clipboard && navigator.clipboard.writeText(membersTSV());
-    copyTsvBtn.textContent = '복사됨 ✓'; setTimeout(() => copyTsvBtn.textContent = 'members 탭용 표 복사', 1500);
-  } }, 'members 탭용 표 복사');
-  wrap.append(section(`멤버 — ${srcLabel}`, [
-    ...memRows,
-    el('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:4px' }, [
-      copyTsvBtn,
-      el('span', { style: 'font-size:11.5px;color:var(--sub)' }, '→ 시트에 "members" 탭을 만들고 A1에 붙여넣으면(탭 구분) 운영진 전원에게 적용돼요.'),
-    ]),
-  ]));
+  function refreshTag() { S.membersSource = 'local'; save(); repaintSettingsPreview(); }
+  const setChange = () => { save(); repaintSettingsPreview(); };       // 즉시 미리보기(비구조 변경)
+  const setChangeR = () => { save(); render(); };                       // 구조 변경(탭 유지)
 
-  // 테마: 프리셋 + 고급
-  const presetBtns = Object.entries(PRESETS).map(([name, p]) =>
-    el('button', { style: btn, onclick: () => { Object.assign(S.theme, p); save(); render(); } }, name));
-  const adv = el('details', { style: 'margin-top:6px' }, [
-    el('summary', { style: 'cursor:pointer;font-size:12.5px;color:var(--sub);padding:4px 0' }, '고급 옵션'),
-    el('div', { style: 'display:flex;flex-direction:column;gap:8px;margin-top:8px' }, [
-      row('헤더', el('input', { value: S.theme.header, style: inp + ';flex:1', oninput: e => { S.theme.header = e.target.value; save(); } })),
-      row('배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 없음', oninput: e => { S.theme.subtitle = e.target.value; save(); } })),
-      row('로고 URL', el('input', { value: S.theme.logo || '', class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: 'https://… (외부만)', oninput: e => { S.theme.logo = e.target.value.trim(); save(); } })),
-      row('이름', elemTypo('nameFamily', 'nameFont', 'nameWeight', 0, 40, '자동(최대)')),
-      row('시간', elemTypo('pillFamily', 'pillFont', 'pillWeight', 0, 20, '자동(0.8×)')),
-      row('제목', elemTypo('titleFamily', 'titleFont', 'titleWeight', 7, 30, '')),
-      row('한줄 우선', seg(S.theme.oneLineMin, [{ v: 99, label: '끔' }, { v: 9, label: '9px↑' }, { v: 10, label: '10px↑' }, { v: 11, label: '11px↑' }], v => { S.theme.oneLineMin = v; save(); render(); })),
-      row('제목 줄바꿈', seg(S.theme.wrap, [{ v: '자동', label: '줄바꿈' }, { v: '말줄임', label: '한 줄(…)' }], v => { S.theme.wrap = v; save(); render(); })),
-      row('카드 높이', slider(S.theme.cardHeight, 40, 200, 4, v => v + 'px', v => { S.theme.cardHeight = v; save(); })),
-      row('모서리', seg(S.theme.radius, [{ v: 0, label: '직각' }, { v: 8, label: '약간' }, { v: 16, label: '둥글게' }], v => { S.theme.radius = v; save(); render(); })),
-      row('배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => { S.theme.bg = v; save(); render(); })),
-      row('링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '표시' }, { v: false, label: '없음' }], v => { S.theme.linkUnderline = v; save(); render(); })),
-      row('시간 표기', seg(S.theme.timeFmt, ['AM/PM', '24시'].map(v => ({ v, label: v })), v => { S.theme.timeFmt = v; save(); render(); })),
-      row('기본 폰트', seg(S.theme.font, ['Pretendard', '나눔고딕', '검은고딕'].map(v => ({ v, label: v })), v => { S.theme.font = v; save(); render(); })),
-    ]),
-  ]);
-  const copyCfgBtn = el('button', { style: btn, onclick: () => {
-    navigator.clipboard && navigator.clipboard.writeText(configTSV());
-    copyCfgBtn.textContent = '복사됨 ✓'; setTimeout(() => copyCfgBtn.textContent = '지금 설정을 기본값으로 (config 탭용 표 복사)', 1500);
-  } }, '지금 설정을 기본값으로 (config 탭용 표 복사)');
-  wrap.append(section('테마 — 시트 config 탭이 있으면 그 값이 전원의 기본값', [
-    el('div', { style: 'display:flex;gap:8px' }, presetBtns), adv,
-    el('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:4px' }, [
+  if (_setTab === 'typo') {
+    wrap.append(section('요소별 글꼴 · 크기 · 굵기', [
+      row('이름', elemTypo('nameFamily', 'nameFont', 'nameWeight', 0, 40, '자동(최대)', setChange, setChangeR)),
+      row('시간', elemTypo('pillFamily', 'pillFont', 'pillWeight', 0, 20, '자동(0.8×)', setChange, setChangeR)),
+      row('제목', elemTypo('titleFamily', 'titleFont', 'titleWeight', 7, 30, '', setChange, setChangeR)),
+      row('기본 폰트', seg(S.theme.font, ['Pretendard', '나눔고딕', '검은고딕'].map(v => ({ v, label: v })), v => { S.theme.font = v; setChangeR(); })),
+    ]));
+    wrap.append(section('제목 처리', [
+      row('한줄 우선', seg(S.theme.oneLineMin, [{ v: 99, label: '끔' }, { v: 9, label: '9px↑' }, { v: 10, label: '10px↑' }, { v: 11, label: '11px↑' }], v => { S.theme.oneLineMin = v; setChangeR(); })),
+      row('제목 줄바꿈', seg(S.theme.wrap, [{ v: '자동', label: '줄바꿈' }, { v: '말줄임', label: '한 줄(…)' }], v => { S.theme.wrap = v; setChangeR(); })),
+    ]));
+  } else if (_setTab === 'card') {
+    const presetBtns = Object.entries(PRESETS).map(([name, p]) =>
+      el('button', { style: btn, onclick: () => { Object.assign(S.theme, p); setChangeR(); } }, name));
+    wrap.append(section('프리셋', [el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' }, presetBtns)]));
+    wrap.append(section('카드 모양', [
+      row('카드 높이', slider(S.theme.cardHeight, 40, 200, 4, v => v + 'px', v => { S.theme.cardHeight = v; setChange(); })),
+      row('모서리', seg(S.theme.radius, [{ v: 0, label: '직각' }, { v: 8, label: '약간' }, { v: 16, label: '둥글게' }], v => { S.theme.radius = v; setChangeR(); })),
+      row('배경', seg(S.theme.bg, ['흰색', '종이', '어둡게'].map(v => ({ v, label: v })), v => { S.theme.bg = v; setChangeR(); })),
+      row('링크 밑줄', seg(S.theme.linkUnderline, [{ v: true, label: '표시' }, { v: false, label: '없음' }], v => { S.theme.linkUnderline = v; setChangeR(); })),
+      row('시간 표기', seg(S.theme.timeFmt, ['AM/PM', '24시'].map(v => ({ v, label: v })), v => { S.theme.timeFmt = v; setChangeR(); })),
+    ]));
+    wrap.append(section('헤더', [
+      row('제목', el('input', { value: S.theme.header, style: inp + ';flex:1', oninput: e => { S.theme.header = e.target.value; setChange(); } })),
+      row('배지', el('input', { value: S.theme.subtitle, style: inp + ';flex:1', placeholder: '비우면 없음', oninput: e => { S.theme.subtitle = e.target.value; setChange(); } })),
+      row('로고 URL', el('input', { value: S.theme.logo || '', class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: 'https://… (외부만)', oninput: e => { S.theme.logo = e.target.value.trim(); setChange(); } })),
+    ]));
+  } else if (_setTab === 'members') {
+    const copyTsvBtn = el('button', { style: btn, onclick: () => {
+      navigator.clipboard && navigator.clipboard.writeText(membersTSV());
+      copyTsvBtn.textContent = '복사됨 ✓'; setTimeout(() => copyTsvBtn.textContent = 'members 탭용 표 복사', 1500);
+    } }, 'members 탭용 표 복사');
+    wrap.append(section(`멤버 — ${srcLabel}`, [
+      ...memRows,
+      el('div', { style: 'display:flex;gap:8px;align-items:center;margin-top:4px' }, [
+        copyTsvBtn,
+        el('span', { style: 'font-size:11.5px;color:var(--sub)' }, '→ 시트 "members" 탭 A1에 붙여넣으면 운영진 전원 적용.'),
+      ]),
+    ]));
+    wrap.append(el('div', { style: 'font-size:11.5px;color:var(--sub);line-height:1.6' },
+      '참고: 이미지·로고는 외부 https 주소만(업로드/data:는 네이버가 지움). 드라이브 공유링크는 자동 변환.'));
+  } else if (_setTab === 'sheet') {
+    wrap.append(section('시트 연결', [
+      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [
+        el('input', { value: S.sheetId, class: 'mono', style: inp + ';flex:1;font-size:12px', oninput: e => { S.sheetId = e.target.value; save(); } }),
+        el('button', { style: btn, onclick: () => syncFromSheet({ full: true }) }, '전체 다시 불러오기'),
+      ]),
+    ]));
+    const copyCfgBtn = el('button', { style: btnPrimary, onclick: () => {
+      navigator.clipboard && navigator.clipboard.writeText(configTSV());
+      copyCfgBtn.textContent = '복사됨 ✓'; setTimeout(() => copyCfgBtn.textContent = '지금 설정을 기본값으로 (config 표 복사)', 1500);
+    } }, '지금 설정을 기본값으로 (config 표 복사)');
+    wrap.append(section('전원 기본값으로 저장', [
       copyCfgBtn,
-      el('span', { style: 'font-size:11.5px;color:var(--sub)' }, '→ 시트에 "config" 탭을 만들고 A1에 붙여넣기 — 누가 열어도 이 설정으로 시작돼요.'),
-    ]),
-  ]));
+      el('div', { style: 'font-size:11.5px;color:var(--sub);line-height:1.6' },
+        '→ 시트에 "config" 탭을 만들고 A1에 붙여넣기. 누가 열어도 지금 설정으로 시작돼요(운영진 공유).'),
+    ]));
+  }
 
-  wrap.append(el('div', { style: 'margin-top:14px;font-size:11.5px;color:var(--sub);line-height:1.6' },
-    '참고: 업로드/data: 이미지는 네이버가 지워요 — 이미지·로고는 외부 https 주소만.'));
-  return wrap;
+  // ── 우측: 실시간 카드 미리보기 ──
+  outer.append(wrap, settingsPreviewPane());
+  return outer;
 
   function section(title, kids) {
     return el('div', { style: 'margin-bottom:16px' }, [
