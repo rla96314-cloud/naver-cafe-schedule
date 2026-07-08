@@ -1331,12 +1331,12 @@ function elemTypo(famKey, sizeKey, weightKey, sizeMin, sizeMax, sizeZeroLabel, o
 }
 
 /* 설정창 우측 미리보기 — 대표 4카드(짧은/긴 제목·아바타·충돌)로 지금 테마를 보여줌. */
+let _setPvSel = null; // 설정 미리보기에서 선택된 방송 id
 function settingsPreviewSample() {
   const M = S.members, pick = i => M[i % M.length] || M[0];
-  const av = m => m && m.img ? m.img : '';
   const wk = curWeek();
-  const real = (wk.schedule || []).slice(0, 6);
-  const demo = real.length >= 3 ? real : [
+  const real = (wk.schedule || []).slice(0, 12); // 실제 이번 주 방송(클릭해 제목 수정 가능)
+  const demo = real.length ? real : [
     { id: 'p1', day: '월', time: '9AM', mem: (pick(0) || {}).id, title: '♥아침 뉴스♥' },
     { id: 'p2', day: '월', time: '2PM', mem: (pick(2) || {}).id, title: '니케 푹먹데이 스페셜 방송' },
     { id: 'p3', day: '월', time: '4PM', mem: (pick(1) || {}).id, title: '소통' },
@@ -1348,19 +1348,47 @@ function settingsPreviewSample() {
 }
 function repaintSettingsPreview() {
   const host = $('#set-pv-render');
-  if (host) host.innerHTML = settingsPreviewSample();
+  if (!host) return;
+  host.innerHTML = settingsPreviewSample();
+  if (_setPvSel) { const c = host.querySelector(`[data-eid="${_setPvSel}"]`); if (c) c.style.outline = `2.5px solid ${C.accent}`; }
+}
+/* 선택된 방송의 제목 편집 행(미리보기 아래). 실제 이번 주 방송만 편집됨. */
+function paintSetPvEdit(box) {
+  box = box || $('#set-pv-edit'); if (!box) return;
+  const w = curWeek();
+  const sel = w.schedule.find(e => e.id === _setPvSel);
+  box.innerHTML = '';
+  if (!sel) {
+    box.append(el('div', { style: 'font-size:11.5px;color:var(--sub);line-height:1.5' }, '카드를 클릭하면 여기서 방송 제목을 고칠 수 있어요. (이 주에만 임시 적용)'));
+    return;
+  }
+  const m = S.members.find(x => x.id === sel.mem);
+  box.append(el('div', { style: 'display:flex;gap:6px;align-items:center' }, [
+    el('span', { style: 'font-size:11.5px;font-weight:700;color:var(--accent);flex-shrink:0' }, `${m ? m.name : '?'} ${sel.time}`),
+    el('input', { value: sel.title, style: inp + ';flex:1;min-width:0;font-size:12px', placeholder: '방송 제목',
+      oninput: e => { sel.title = e.target.value; w.dirty = true; save(); repaintSettingsPreview(); } }),
+    el('button', { style: btn + ';padding:5px 9px;font-size:11px', onclick: () => { _setPvSel = null; paintSetPvEdit(); repaintSettingsPreview(); } }, '닫기'),
+  ]));
 }
 function settingsPreviewPane() {
   const scale = 0.58;
+  const host = el('div', { id: 'set-pv-render', style: `width:740px;zoom:${scale}`, html: settingsPreviewSample() });
+  // 카드 클릭 → 제목 편집(리스너는 host에 한 번만; innerHTML 교체돼도 유지)
+  host.addEventListener('click', ev => {
+    const card = ev.target.closest('.schd-card');
+    if (!card) return;
+    ev.preventDefault();
+    const id = card.getAttribute('data-eid');
+    if (!curWeek().schedule.some(e => e.id === id)) return; // 데모 카드(실데이터 없음)는 편집 불가
+    _setPvSel = id; paintSetPvEdit(); repaintSettingsPreview();
+  });
   return el('div', { style: 'width:470px;flex-shrink:0;border-left:1px solid var(--hair);background:#EEEAE2;display:flex;flex-direction:column' }, [
     el('div', { style: 'padding:11px 16px;border-bottom:1px solid var(--hair);background:#fff;font-size:12.5px;font-weight:700' }, [
-      '미리보기 ', el('span', { style: 'font-weight:500;color:var(--sub)' }, '= 대문에서 보이는 그대로'),
+      '미리보기 ', el('span', { style: 'font-weight:500;color:var(--sub)' }, '= 대문 그대로 · 카드 눌러 제목 수정'),
     ]),
     el('div', { style: 'flex:1;overflow:auto;padding:14px' }, [
-      el('div', { style: `border:1px solid var(--hair);border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.07);width:${Math.round(740 * scale) + 2}px;background:#fff` }, [
-        el('div', { id: 'set-pv-render', style: `width:740px;zoom:${scale}`, html: settingsPreviewSample() }),
-      ]),
-      el('div', { style: 'font-size:11px;color:var(--sub);margin-top:8px' }, '이번 주 앞쪽 방송으로 미리봄. 슬라이더는 즉시, 나머지는 손 떼면 반영.'),
+      el('div', { style: `border:1px solid var(--hair);border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.07);width:${Math.round(740 * scale) + 2}px;background:#fff` }, [host]),
+      el('div', { id: 'set-pv-edit', style: 'margin-top:10px;padding:10px 12px;background:#fff;border:1px solid var(--hair);border-radius:10px' }),
     ]),
   ]);
 }
@@ -1593,6 +1621,7 @@ function render() {
   if (pv && S.selId) { const c = pv.querySelector(`[data-eid="${S.selId}"]`); if (c) c.style.outline = `2.5px solid ${C.accent}`; }
   const curTab = $('#week-cur'); // 현재 주 탭을 가로 스크롤 안에 보이게
   if (curTab && curTab.scrollIntoView) curTab.scrollIntoView({ block: 'nearest', inline: 'center' });
+  if ($('#set-pv-edit')) { paintSetPvEdit(); repaintSettingsPreview(); } // 설정 미리보기 편집행·선택표시
   paintSync();
   save();
 }
