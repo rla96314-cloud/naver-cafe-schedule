@@ -298,18 +298,18 @@ function paintWarnings(box) {
 
 /* ── 메인 화면: 주 탭 + 미리보기 + 인스펙터 ── */
 function weekTabBar() {
-  const bar = el('div', { style: 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px' });
   const arrow = 'width:28px;height:28px;border-radius:8px;border:1px solid var(--hair);background:#fff;cursor:pointer;font-size:16px;color:var(--sub);line-height:1;flex-shrink:0';
-  bar.append(el('button', { style: arrow, onclick: () => switchWeek(S.weekIdx - 1) }, '‹'));
+  // 한 줄 가로 스크롤 — 주가 많아도 안 뒤엉킴. 현재 주가 항상 보이게 스크롤.
+  const scroller = el('div', { id: 'week-scroll', style: 'display:flex;align-items:center;gap:6px;overflow-x:auto;flex:1;padding:2px 0;scrollbar-width:thin' });
   S.weeks.forEach((w, i) => {
     const on = i === S.weekIdx;
     const tab = el('button', {
-      style: `padding:6px 11px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:${on ? 700 : 600};` +
+      style: `padding:6px 11px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:${on ? 700 : 600};white-space:nowrap;flex-shrink:0;` +
         `border:1px solid ${on ? 'var(--accent)' : 'var(--hair)'};background:${on ? 'rgba(192,67,42,.08)' : '#fff'};color:${on ? 'var(--accent)' : 'var(--ink)'}`,
       onclick: () => switchWeek(i),
     }, (w.label || '주 ' + (i + 1)) + (w.dirty ? ' •' : ''));
+    if (on) tab.id = 'week-cur';
     if (on && S.weeks.length > 1) {
-      // 선택된 탭에만 삭제(✕) — 시트에서 지워진 유령 주를 목록에서 뺄 때 사용(시트 원본 무관)
       tab.append(el('span', {
         style: 'margin-left:7px;color:rgba(192,67,42,.55);font-weight:800;cursor:pointer',
         title: '이 주를 목록에서 제거 (시트 원본은 그대로)',
@@ -322,13 +322,13 @@ function weekTabBar() {
         },
       }, '✕'));
     }
-    bar.append(tab);
+    scroller.append(tab);
   });
-  bar.append(el('button', { style: arrow, onclick: () => switchWeek(S.weekIdx + 1) }, '›'));
-  bar.append(el('div', { style: 'flex:1' }));
-  const addIn = el('input', { class: 'mono', style: inp + ';width:150px;font-size:11.5px;padding:5px 8px', placeholder: '새 주 탭 이름/URL' });
-  bar.append(addIn, el('button', { style: btn + ';padding:6px 10px;font-size:12px', onclick: () => appendTab(addIn) }, '＋'));
-  return bar;
+  return el('div', { style: 'display:flex;align-items:center;gap:6px;margin-bottom:12px' }, [
+    el('button', { style: arrow, title: '이전 주', onclick: () => switchWeek(S.weekIdx - 1) }, '‹'),
+    scroller,
+    el('button', { style: arrow, title: '다음 주', onclick: () => switchWeek(S.weekIdx + 1) }, '›'),
+  ]);
 }
 async function switchWeek(i) {
   i = Math.max(0, Math.min(S.weeks.length - 1, i));
@@ -448,17 +448,17 @@ function mainView() {
     S.selId = card.getAttribute('data-eid');
     render();
   });
-  const scale = 0.795; // 740 → 588px 표시
+  const scale = 0.86; // 740 → 636px 표시(중앙)
   body.append(
-    el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin:2px 2px 8px' }, [
-      el('div', { style: 'font-size:12.5px;font-weight:700' }, ['대문 미리보기 ', el('span', { style: 'font-weight:500;color:var(--sub)' }, '= 네이버에서 보이는 그대로 · 카드 클릭 = 수정')]),
+    el('div', { style: 'display:flex;justify-content:space-between;align-items:center;margin:2px 2px 8px;max-width:640px;margin-left:auto;margin-right:auto' }, [
+      el('div', { style: 'font-size:12.5px;font-weight:700' }, ['미리보기 ', el('span', { style: 'font-weight:500;color:var(--sub)' }, '= 대문에서 보이는 그대로 · 카드를 눌러 수정')]),
       el('span', { style: 'font-size:11px;font-weight:700;color:var(--accent);background:rgba(192,67,42,.1);padding:3px 9px;border-radius:20px' }, `링크 ${links} · 방송 ${curWeek().schedule.length}`),
     ]),
-    el('div', { style: `border:1px solid var(--hair);border-radius:10px;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.07);width:${Math.round(740 * scale) + 2}px;background:#fff` }, [
+    el('div', { style: `border:1px solid var(--hair);border-radius:10px;overflow:hidden;box-shadow:0 2px 14px rgba(0,0,0,.07);width:${Math.round(740 * scale) + 2}px;background:#fff;margin:0 auto` }, [
       el('div', { style: `width:740px;zoom:${scale}` }, pv),
     ]),
-    el('div', { style: 'font-size:11.5px;color:var(--sub);margin-top:10px' },
-      '복사 → 카페 관리 → 대문 → HTML 편집 → 기존 블록 지우고 붙여넣기 → 저장'),
+    el('div', { style: 'text-align:center;font-size:11.5px;color:var(--sub);margin-top:10px' },
+      'HTML 복사 → 카페 관리 → 대문 → HTML 편집 → 기존 블록 지우고 붙여넣기 → 저장'),
   );
   wrap.append(body, inspector());
   return wrap;
@@ -679,6 +679,11 @@ function settingsView() {
         el('button', { style: btn, onclick: () => syncFromSheet({ full: true }) }, '전체 다시 불러오기'),
       ]),
     ]));
+    const addIn = el('input', { class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: '예: 0803  또는  탭 URL/gid' });
+    wrap.append(section('주 탭 수동 추가', [
+      el('div', { style: 'display:flex;gap:8px;align-items:center' }, [addIn, el('button', { style: btn, onclick: () => appendTab(addIn) }, '＋ 추가')]),
+      el('div', { style: 'font-size:11.5px;color:var(--sub);line-height:1.6' }, '보통은 열 때 자동 발견돼요. 이름이 MMDD 규칙이 아닌 탭만 여기서 추가.'),
+    ]));
     // (A) 자동 저장 — 웹앱 있으면 버튼 한 번으로 config(+members) 탭 갱신
     const memChk = el('input', { type: 'checkbox' });
     const saveBtn = el('button', { style: btnPrimary, onclick: () => saveConfigToSheet(saveBtn, memChk.checked) }, '설정을 시트에 저장 (전원 반영)');
@@ -746,6 +751,8 @@ function render() {
   app.append(win);
   const pv = $('#pv-render');
   if (pv && S.selId) { const c = pv.querySelector(`[data-eid="${S.selId}"]`); if (c) c.style.outline = `2.5px solid ${C.accent}`; }
+  const curTab = $('#week-cur'); // 현재 주 탭을 가로 스크롤 안에 보이게
+  if (curTab && curTab.scrollIntoView) curTab.scrollIntoView({ block: 'nearest', inline: 'center' });
   paintSync();
   save();
 }
