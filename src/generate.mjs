@@ -111,9 +111,11 @@ export function simulateNaver(html) {
    → 구역 클립에 의존하지 말고, 폭·줄수를 계산해 생성 단계에서 잘라낸다(줄은 <br>로 확정).
    글자폭 단위(Pretendard 실측): 한글 0.95 / 기호 0.5 / 영문·숫자 0.55 (×F). 0.92 보수 계수. */
 function chUnit(ch) {
-  if (/[♥♡●◆★☆‥…·]/.test(ch)) return 0.5;               // 기호(Pretendard 실측 ~0.6em)
-  if (/[ᄀ-ᇿ⺀-꓏가-힣豈-﫿︰-﹏＀-｠]/.test(ch)) return 0.95; // 한글/전각
-  return 0.55;                                                  // 영문·숫자·공백
+  if (ch === ' ') return 0.28;                                    // 공백(실측 0.27)
+  if (/[♥♡●◆★☆]/.test(ch)) return 0.87;                      // 기호(실측 0.87)
+  if (/[ᄀ-ᇿ⺀-꓏가-힣豈-﫿︰-﹏＀-｠]/.test(ch)) return 0.87;  // 한글/전각(실측 0.865)
+  if (/[A-Z0-9]/.test(ch)) return 0.68;                           // 대문자·숫자(실측 0.66~0.69)
+  return 0.5;                                                     // 소문자·기타
 }
 function textUnits(s) { let u = 0; for (const ch of String(s)) u += chUnit(ch); return u; }
 /* 텍스트를 폭(px)·폰트·최대줄수에 맞춰 줄 배열로. 넘치면 잘라내고 마지막에 … */
@@ -122,7 +124,7 @@ export function fitLines(text, widthPx, fontPx, maxLines) {
 }
 /* fitLines + 잘렸는지(trunc) 여부 — 자동 크기 탐색용 */
 export function fitLinesInfo(text, widthPx, fontPx, maxLines) {
-  const perLine = Math.max(1, (widthPx / fontPx) * 0.92);
+  const perLine = Math.max(1, (widthPx / fontPx) * 0.96);
   const words = String(text || '').split(/\s+/).filter(Boolean);
   const lines = [];
   let cur = '', curU = 0, trunc = false;
@@ -189,7 +191,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     font:'Pretendard', fontSize:'보통', align:'왼쪽', wrap:'자동',
     collision:'좌우', radius:16, bg:'흰색', timeFmt:'AM/PM',
     header:'', subtitle:'', logo:'', linkUnderline:false, fontScale:1,
-    cardHeight:60, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:11,
+    cardHeight:60, nameFont:0 /* 0=자동(고정 내용이 다 보이는 최대) */, titleFont:11, oneLineMin:10,
     survive: DEFAULT_SURVIVE,
     ...theme,
   };
@@ -208,11 +210,11 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
      └────────────────────────┘
      각 구역은 overflow:hidden — 글자가 구역을 절대 못 넘음. 카드도 안 커짐. */
   // 레퍼런스(1600px)를 740px로 환산한 비율: 카드 ≈ 1.6:1 가로형, 패딩 ≈ 폭의 6%
-  const PAD_V = 5, PAD_H = 6, ZONE_GAP = 3;
+  const PAD_V = 5, PAD_H = 4, ZONE_GAP = 2;
   /* ③④는 변동성 없는 데이터(멤버 목록·시간 형식) → 이번 주 최장 이름·최장 시간을 미리 알 수 있다.
      nameFont가 0(자동)이면 "고정 내용이 전부 보이는 최대 폰트"를 계산한다.
      열 내용폭: (740 - 바깥패딩24)/7 - 셀패딩8 - 카드패딩18 ≈ 76px */
-  const COL_CONTENT = Math.floor((740 - 24) / 7) - 8 - PAD_H * 2;
+  const COL_CONTENT = Math.floor((740 - 24) / 7) - 6 - PAD_H * 2;
   const timesSeen = schedule.map(s => String(formatTime(s.time, t.timeFmt)));
   const maxTimeLen = Math.max(3, ...timesSeen.map(s => s.length), 0);
   const namesSeen = members.filter(m => schedule.some(s => s.mem === m.id)).map(m => m.name);
@@ -224,7 +226,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
   const nameF = (+t.nameFont > 0) ? +t.nameFont : Math.max(9, Math.min(40, autoF)); // ③ 고정(축소 없음)
   const pillF = Math.max(8, Math.round(nameF * PILL_R));                              // ④ 이름의 0.8배
   const titleF = Math.max(8, Math.round((+t.titleFont || 11) * sc));                  // ⑤ (fontScale 적용)
-  const pillW = Math.ceil(pillF * (maxTimeLen * 0.56 + 0.9)) + 2;                     // ④ 구역 = 딱 필요한 폭
+  const pillW = Math.ceil(pillF * (maxTimeLen * 0.62 + 0.7)) + 2;                     // ④ 구역 = 딱 필요한 폭
   const nameZoneH = Math.round(nameF * 1.25);
   const cardH = (+t.cardHeight > 0) ? +t.cardHeight
     : nameZoneH + Math.round(titleF * 2.6) + PAD_V * 2 + ZONE_GAP;
@@ -280,7 +282,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const timeTxt = escapeHtml(formatTime(c.time, t.timeFmt));
     // ④알약 폭 = 이 카드의 시간 길이 기준(주 최장 기준이면 '9AM' 카드도 '6.30PM' 폭을 낭비 —
     // 제목 폭을 부당하게 조임). 레퍼런스 포스터도 알약이 내용만큼만 넓다.
-    const myPillW = Math.ceil(pillF * (String(timeTxt).length * 0.56 + 0.9)) + 2;
+    const myPillW = Math.ceil(pillF * (textUnits(String(timeTxt)) + 0.5)) + 1;
     const deco = t.linkUnderline ? 'underline' : 'none';
     const link = inner => linkable
       ? `<a href="${href(url)}" class="schd-link" style="text-decoration:${deco};color:${m.fg}">${inner}</a>`
@@ -291,7 +293,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const pill =
       `<span style="display:inline-block;background:${pillBg};color:${pillFg};` +
       (radius ? `border-radius:${Math.round(nameZoneH / 2)}px;` : '') +
-      `padding:0 ${Math.round(pillF * 0.45)}px;font-size:${pillF}px;line-height:${nameZoneH}px;` +
+      `padding:0 ${Math.round(pillF * 0.25)}px;font-size:${pillF}px;line-height:${nameZoneH}px;` +
       `font-weight:800;white-space:nowrap">${timeTxt}</span>`;
     /* ③ 이름 — 폰트 고정(nameF), nowrap, 구역 밖으로 못 나감 */
     const nameHtml = `<b style="font-size:${nameF}px;line-height:${nameZoneH}px;color:${m.fg};white-space:nowrap">${escapeHtml(m.name)}</b>`;
@@ -307,16 +309,26 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const autoTitleW = narrow
       ? Math.max(20, Math.floor((COL_CONTENT + PAD_H * 2) * 0.49) - PAD_H * 2)
       : ((img && !narrow) ? COL_CONTENT - myPillW - ZONE_GAP : COL_CONTENT);
-    let tF;
+    let tF, oneLine = false;
     if (+c.titleSize > 0) {
       tF = Math.min(Math.max(7, +c.titleSize), zoneCap);
     } else {
       tF = Math.min(titleF, zoneCap);
       if (c.title && t.wrap !== '말줄임') {
-        for (let f = Math.min(titleF, zoneCap); f >= 7; f--) {
-          const ml = Math.max(1, Math.floor(titleZoneH / Math.round(f * 1.2)));
-          if (!fitLinesInfo(c.title, autoTitleW, f, ml).trunc) { tF = f; break; }
-          tF = 7; // 7px로도 안 들어가면 최소 크기에서 … 처리
+        // ①한 줄 우선: 제목 전체가 한 줄에 들어가는 최대 크기가 oneLineMin 이상이면 채택
+        const olMin = Math.max(7, +t.oneLineMin || 10);
+        const u = textUnits(String(c.title).trim().replace(/\s+/g, ' '));
+        const olMax = Math.floor((autoTitleW * 0.98) / u);
+        if (olMax >= olMin) {
+          tF = Math.min(olMax, Math.min(titleF + 1, zoneCap)); // 테마+1까지만(들쭉날쭉 방지)
+          oneLine = true;
+        } else {
+          // ②기존: …없이 들어가는 최대 크기(여러 줄 허용)
+          for (let f = Math.min(titleF, zoneCap); f >= 7; f--) {
+            const ml = Math.max(1, Math.floor(titleZoneH / Math.round(f * 1.2)));
+            if (!fitLinesInfo(c.title, autoTitleW, f, ml).trunc) { tF = f; break; }
+            tF = 7; // 7px로도 안 들어가면 최소 크기에서 … 처리
+          }
         }
       }
     }
@@ -329,6 +341,10 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
     const titleMaxLines = h => (t.wrap === '말줄임') ? 1 : Math.max(1, Math.floor(h / lineH));
     const titleHtmlFor = h => {
       if (!c.title) return '';
+      if (oneLine) {
+        const one = escapeHtml(String(c.title).trim().replace(/\s+/g, ' '));
+        return link(`<span class="schd-title" style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg};white-space:nowrap">${one}</span>`);
+      }
       const lines = fitLines(c.title, titleW, tF, titleMaxLines(h));
       const htmlLines = lines.map(ln =>
         ln.split(' ').map(w => `<span style="white-space:nowrap">${escapeHtml(w)}</span>`).join(' ')
@@ -410,7 +426,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       } else {
         inner = es.map((c, i) => `<div style="${i ? 'margin-top:6px' : ''}">${card(c)}</div>`).join('');
       }
-      rows += `      <td style="padding:6px 4px;vertical-align:top">${inner}</td>\n`;
+      rows += `      <td style="padding:6px 3px;vertical-align:top">${inner}</td>\n`;
     }
     rows += `    </tr>\n`;
   }

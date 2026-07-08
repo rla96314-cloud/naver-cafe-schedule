@@ -38,7 +38,7 @@ const THEME_DEFAULT = {
   header: '주간 스케줄표', subtitle: '', logo: '',
   fontSize: '보통', fontScale: 1, cardHeight: 60, nameFont: 0, titleFont: 11, radius: 16,
   bg: '흰색', linkUnderline: false, collision: '좌우', align: '왼쪽',
-  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', pv: 2, // pv = 포스터 룩 버전(캐시 마이그레이션용)
+  wrap: '자동', timeFmt: 'AM/PM', font: 'Pretendard', oneLineMin: 10, pv: 2, // pv = 포스터 룩 버전(캐시 마이그레이션용)
 };
 const PRESETS = {
   '둥근 포스터(기본)': { radius: 16, cardHeight: 60, nameFont: 0, titleFont: 11 },
@@ -558,6 +558,7 @@ function settingsView() {
       row('로고 URL', el('input', { value: S.theme.logo || '', class: 'mono', style: inp + ';flex:1;font-size:12px', placeholder: 'https://… (외부만)', oninput: e => { S.theme.logo = e.target.value.trim(); save(); } })),
       row('이름·시간 폰트', slider(S.theme.nameFont, 0, 40, 1, v => v ? v + 'px' : '자동(최대)', v => { S.theme.nameFont = v; save(); })),
       row('제목 폰트', slider(S.theme.titleFont, 8, 30, 1, v => v + 'px', v => { S.theme.titleFont = v; save(); })),
+      row('한줄 우선', seg(S.theme.oneLineMin, [{ v: 99, label: '끔' }, { v: 9, label: '9px↑' }, { v: 10, label: '10px↑' }, { v: 11, label: '11px↑' }], v => { S.theme.oneLineMin = v; save(); render(); })),
       row('제목 줄바꿈', seg(S.theme.wrap, [{ v: '자동', label: '줄바꿈' }, { v: '말줄임', label: '한 줄(…)' }], v => { S.theme.wrap = v; save(); render(); })),
       row('카드 높이', slider(S.theme.cardHeight, 40, 200, 4, v => v + 'px', v => { S.theme.cardHeight = v; save(); })),
       row('모서리', seg(S.theme.radius, [{ v: 0, label: '직각' }, { v: 8, label: '약간' }, { v: 16, label: '둥글게' }], v => { S.theme.radius = v; save(); render(); })),
