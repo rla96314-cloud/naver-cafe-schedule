@@ -311,7 +311,7 @@ export function generateScheduleHTML({ members = [], schedule = [], dates = {}, 
       const htmlLines = lines.map(ln =>
         ln.split(' ').map(w => `<span style="white-space:nowrap">${escapeHtml(w)}</span>`).join(' ')
       ).join('<br>');
-      return link(`<span style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg}">${htmlLines}</span>`);
+      return link(`<span class="schd-title" style="font-size:${tF}px;line-height:${lineH}px;color:${m.fg}">${htmlLines}</span>`);
     };
 
     /* 구역 div에 font-size·line-height를 박아 넣는다 — 안 하면 inline <a>의 스트럿이

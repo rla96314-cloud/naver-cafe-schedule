@@ -379,9 +379,27 @@ function inspector() {
   };
   const stepBtn = (txt, d) => el('button', { style: btn + ';padding:6px 9px;font-size:13px', title: '이 카드 제목 크기',
     onclick: () => setSize(Math.max(0, Math.min(24, (sel.titleSize > 0 ? sel.titleSize : S.theme.titleFont) + d))) }, txt);
+  // 자동 맞춤: … 없이 제목이 전부 보이는 "가장 큰" 크기를 실제 생성 파이프라인으로 탐색.
+  const autoFit = () => {
+    const orig = String(sel.title || '').replace(/\s+/g, '');
+    if (!orig) return;
+    const shownAt = f => {
+      const prev = sel.titleSize; sel.titleSize = f;
+      const host = document.createElement('div'); host.innerHTML = genHTML();
+      const card = host.querySelector(`[data-eid="${sel.id}"] .schd-title`);
+      sel.titleSize = prev;
+      return card ? card.textContent.replace(/\s+/g, '') : '';
+    };
+    for (let f = 24; f >= 7; f--) {
+      if (shownAt(f) === orig) { setSize(f); return; }
+    }
+    setSize(7);
+    alert('7px까지 줄여도 제목이 다 안 들어가요.\n제목을 줄이거나, 설정⚙에서 카드 높이를 키우면(넉넉하게 84px) 들어갑니다.');
+  };
   const sizeCtl = el('span', { style: 'display:inline-flex;align-items:center;gap:3px;flex-shrink:0', title: '이 카드만의 제목 폰트 크기' }, [
     el('span', { style: 'font-size:11px;color:var(--sub)' }, '제목크기'),
     stepBtn('−', -1), sizeLbl, stepBtn('＋', +1),
+    el('button', { style: btn + ';padding:6px 9px;font-size:11px;color:var(--accent);border-color:rgba(192,67,42,.4)', title: '… 없이 다 보이는 최대 크기로', onclick: autoFit }, '맞춤'),
     el('button', { style: btn + ';padding:6px 8px;font-size:11px', title: '테마 기본으로', onclick: () => setSize(0) }, '↺'),
   ]);
   box.append(
